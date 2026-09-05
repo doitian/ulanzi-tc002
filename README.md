@@ -69,8 +69,9 @@ indices 16–255 and explicit RGB retain their standard/exact values.
 Backgrounds and other SGR styles are ignored; cursor-control escapes are rejected.
 ANSI codes do not count toward the 256-visible-character limit or scrolling width.
 ANSI characters are 6 pixels wide with a one-pixel gap; spaces reserve a full
-character cell. Measured on the device font, M, W, and X are 8 pixels and N is
-7 pixels wide, so they get a matching wider advance. This layout fits seven characters
+character cell. Measured on the device font, digits are 5 pixels, N is 7
+pixels, and M, W, and X are 8 pixels wide, so they get a matching advance.
+This layout fits seven characters
 before scrolling (eight for plain text).
 Empty text, or ANSI codes with no visible text, clears the screen.
 

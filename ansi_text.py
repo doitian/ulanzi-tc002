@@ -10,7 +10,8 @@ SGR = re.compile(r"\x1b\[([0-9;]*)m")
 GLYPH_WIDTH = 6
 # Measured on the device font at fontHeight 10 (parse_ansi uppercases all
 # input); glyphs not listed here are GLYPH_WIDTH pixels wide.
-GLYPH_WIDTHS = {"M": 8, "N": 7, "W": 8, "X": 8}
+GLYPH_WIDTHS = {"M": 8, "N": 7, "W": 8, "X": 8,
+                **{digit: 5 for digit in "0123456789"}}
 
 
 def glyph_width(char):
