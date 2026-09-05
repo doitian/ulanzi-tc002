@@ -8,11 +8,17 @@ PALETTE = ["#45475A", "#F38BA8", "#A6E3A1", "#F9E2AF",
            "#89B4FA", "#F5C2E7", "#94E2D5", "#A6ADC8"]
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
 GLYPH_WIDTH = 6
-CHAR_ADVANCE = 7  # Six-pixel glyph plus one blank column.
+# Measured on the device font at fontHeight 10 (parse_ansi uppercases all
+# input); glyphs not listed here are GLYPH_WIDTH pixels wide.
+GLYPH_WIDTHS = {"M": 8, "N": 7, "W": 8, "X": 8}
+
+
+def glyph_width(char):
+    return GLYPH_WIDTHS.get(char, GLYPH_WIDTH)
 
 
 def text_width(glyphs):
-    return max(0, len(glyphs) * CHAR_ADVANCE - 1)
+    return max(0, sum(glyph_width(char) + 1 for char, _ in glyphs) - 1)
 
 
 def marquee_offsets(width):
@@ -92,13 +98,18 @@ def ansi_frames(glyphs):
         yield blank_frame()
         return
     offsets = [((52 - width) // 2,)] if width <= 52 else marquee_offsets(width)
+    starts = []
+    left = 0
+    for char, _ in glyphs:
+        starts.append(left)
+        left += glyph_width(char) + 1
     for copies in offsets:
         elements = []
         for x in copies:
-            for index, (char, color) in enumerate(glyphs):
-                left = x + index * CHAR_ADVANCE
+            for (char, color), start in zip(glyphs, starts):
+                left = x + start
                 # Spaces reserve their full advance without relying on a space glyph.
-                if char != " " and -GLYPH_WIDTH < left < 52:
+                if char != " " and left < 52 and left + glyph_width(char) > 0:
                     elements.append({"content": char, "fontHeight": 10,
                                      "x": left, "y": 3, "color": color,
                                      "rect": [0, 0, 52, 16]})

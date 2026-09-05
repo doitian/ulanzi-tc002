@@ -44,6 +44,16 @@ class AnsiTests(unittest.TestCase):
         self.assertEqual(widget.rendered_width, 55)
         self.assertEqual(widget.device.post.call_args.args[2]["text"][0]["x"], 0)
 
+    def test_measured_wide_glyphs_get_extra_space(self):
+        ma = next(ansi_frames(parse_ansi("MA", "#FFFFFF")))
+        self.assertEqual([t["x"] for t in ma["text"]], [18, 27])
+        na = next(ansi_frames(parse_ansi("NA", "#FFFFFF")))
+        self.assertEqual([t["x"] for t in na["text"]], [19, 27])
+        wa = next(ansi_frames(parse_ansi("WA", "#FFFFFF")))
+        self.assertEqual([t["x"] for t in wa["text"]], [18, 27])
+        xa = next(ansi_frames(parse_ansi("XA", "#FFFFFF")))
+        self.assertEqual([t["x"] for t in xa["text"]], [18, 27])
+
     def test_bad_escapes_rejected(self):
         for text in ["\x1b[2J", "\x1b[38;2;1mX", "\x1b[38;5;256mX", "\x1b[31"]:
             with self.assertRaises(ValueError):
