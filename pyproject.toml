@@ -1,0 +1,17 @@
+[project]
+name = "ulanzi-tc002"
+version = "0.1.0"
+description = "HTTP widgets for the Ulanzi TC002 pixel display"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+tc002 = "tc002:cli"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["tc002", "device", "text_server", "ansi_text", "tail_client"]
