@@ -1,6 +1,7 @@
 FROM python:3.13-slim AS build
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential libffi-dev \
+ && apt-get install -y --no-install-recommends \
+        build-essential libffi-dev zlib1g-dev libpng-dev \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY pyproject.toml README.md ./
@@ -12,6 +13,9 @@ RUN python -m venv /venv \
  && find /venv -type d -name __pycache__ -print0 | xargs -0 rm -rf
 
 FROM python:3.13-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libpng16-16 \
+ && rm -rf /var/lib/apt/lists/*
 ENV PATH=/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
