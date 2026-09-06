@@ -105,6 +105,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(apps["cat"]["type"], "image")
         self.assertTrue(apps["cat"]["image"].startswith("data:image/png;base64,"))
 
+    def test_list_includes_device_apps_and_delete(self):
+        self.device.custom_list.return_value = {"apps": ["text", "hello"]}
+        self._add("hello")
+        listed = self.client.get("/api/apps").json()
+        names = [app["name"] for app in listed]
+        self.assertEqual(names, ["hello", "text"])
+        leftover = next(app for app in listed if app["name"] == "text")
+        self.assertIsNone(leftover["type"])
+        self.assertTrue(leftover["on_device"])
+        deleted = self.client.delete("/api/apps/text")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.json()["deleted"])
+
     def test_migrates_legacy_enabled_text_app(self):
         (Path(self.tmp.name) / "config.json").write_text(
             '{"apps": {"text": {"enabled": true}}}\n', encoding="utf-8")

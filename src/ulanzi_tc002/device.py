@@ -156,6 +156,10 @@ class Device:
         self.save()
         return self.address
 
+    def custom_list(self):
+        self.ensure_address()
+        return request(f"http://{self.address}/api/customList", timeout=5)
+
     def post(self, sender, app, frame):
         if not self.address:
             self.ensure_address()

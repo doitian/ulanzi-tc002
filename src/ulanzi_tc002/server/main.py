@@ -15,6 +15,24 @@ PUBLIC_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/app.js", "/style.css")
 PUBLIC_PATHS = {"/", "/api/health"}
 
 
+def device_app_names(data):
+    if isinstance(data, dict):
+        apps = data.get("apps", [])
+    elif isinstance(data, list):
+        apps = data
+    else:
+        return []
+    names = []
+    for item in apps:
+        if isinstance(item, str) and item:
+            names.append(item)
+        elif isinstance(item, dict):
+            name = item.get("name") or item.get("app")
+            if isinstance(name, str) and name:
+                names.append(name)
+    return names
+
+
 def create_app(settings=None, device=None):
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import FileResponse, JSONResponse
@@ -72,7 +90,16 @@ def create_app(settings=None, device=None):
 
     @app.get("/api/apps")
     def list_apps():
-        return registry.list()
+        managed = registry.list()
+        names = {app["name"] for app in managed}
+        extras = []
+        try:
+            for name in device_app_names(device.custom_list()):
+                if name not in names:
+                    extras.append({"name": name, "type": None, "app": name, "on_device": True})
+        except (OSError, ValueError, ConnectionError, TypeError, AttributeError):
+            pass
+        return managed + extras
 
     @app.post("/api/apps")
     def add_app(payload: dict):
@@ -104,8 +131,10 @@ def create_app(settings=None, device=None):
 
     @app.delete("/api/apps/{name}")
     def remove_app(name: str):
-        require_app(name)
-        return registry.delete(name)
+        try:
+            return registry.delete(name)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.get("/api/device")
     def device_status():
