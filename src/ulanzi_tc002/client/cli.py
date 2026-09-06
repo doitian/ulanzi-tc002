@@ -70,6 +70,11 @@ def run_status(args):
     print(json.dumps(api(args, "/api/device"), indent=2), flush=True)
 
 
+def run_watch(args):
+    from ulanzi_tc002.client.watch import watch_agents
+    watch_agents(args, api)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", help="Server URL (default: config.toml or http://127.0.0.1:8008)")
@@ -114,6 +119,16 @@ def build_parser():
     delete.set_defaults(handler=apps_delete)
 
     commands.add_parser("status", help="List device components").set_defaults(handler=run_status)
+
+    watch = commands.add_parser("watch", help="Watch agent status")
+    watch_sources = watch.add_subparsers(dest="watch_command", required=True)
+    agents = watch_sources.add_parser("agents", help="Watch provider sessions")
+    agents.add_argument("--providers", required=True, help="Comma-separated providers (opencode)")
+    agents.add_argument("--bridge-host", default="127.0.0.1", help="Bridge bind host (default: 127.0.0.1)")
+    agents.add_argument("--bridge-port", type=int, default=8009, help="Bridge bind port (default: 8009)")
+    agents.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds (default: 1)")
+    agents.add_argument("--once", action="store_true", help="Poll once and exit")
+    agents.set_defaults(handler=run_watch)
     return parser
 
 
@@ -143,6 +158,16 @@ def main(argv=None):
         try:
             image_data_uri(Path(args.path).read_bytes())
         except (OSError, ValueError) as error:
+            parser.error(str(error))
+    if args.command == "watch":
+        from ulanzi_tc002.client.watch import parse_providers
+        try:
+            if args.interval <= 0:
+                raise ValueError("interval must be positive")
+            if not 0 <= args.bridge_port <= 65535:
+                raise ValueError("bridge port must be 0..65535")
+            args.providers = parse_providers(args.providers)
+        except ValueError as error:
             parser.error(str(error))
     args.handler(args)
 

@@ -30,3 +30,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ulanzi_tc002.server" = ["ui/*"]
+"ulanzi_tc002.plugins" = ["*.js"]
