@@ -14,7 +14,7 @@ RUN python -m venv /venv \
 
 FROM python:3.13-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libpng16-16 \
+ && apt-get install -y --no-install-recommends libpng16-16t64 \
  && rm -rf /var/lib/apt/lists/*
 ENV PATH=/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
