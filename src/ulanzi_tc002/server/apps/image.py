@@ -1,4 +1,7 @@
-from ulanzi_tc002.frames import blank_frame, image_frame, parse_image, publish
+import base64
+
+from ulanzi_tc002.canvas import fit_to_canvas
+from ulanzi_tc002.frames import blank_frame, image_data_uri, image_frame, parse_image, publish
 from ulanzi_tc002.server.apps.base import App
 
 
@@ -22,6 +25,8 @@ class ImageWidget:
             data_uri = ""
         else:
             data_uri = parse_image(image)
+            payload = data_uri.split(",", 1)[1]
+            data_uri = image_data_uri(fit_to_canvas(base64.b64decode(payload)))
             frame = image_frame(data_uri, duration)
         self.state = (data_uri, duration)
         try:

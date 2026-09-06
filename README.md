@@ -64,9 +64,10 @@ escapes. Empty text, or ANSI with no visible characters, sends a black frame
 without deleting the DIY app.
 
 `POST /api/apps/{name}` on an image app requires `image`: a GIF or PNG as a
-`data:image/...;base64,...` URI or raw base64 (up to 2 MiB). GIFs loop on the
-device. Empty `image` sends a black frame. Optional `duration` is how long the
-clock shows that DIY page.
+`data:image/...;base64,...` URI or raw base64 (up to 2 MiB). The server fits the
+image into the 52x16 canvas. Animated GIFs stay GIFs and loop on the device.
+Empty `image` sends a black frame. Optional `duration` is how long the clock
+shows that DIY page.
 
 Invalid input returns 400; unknown apps return 404; device failures return 502.
 

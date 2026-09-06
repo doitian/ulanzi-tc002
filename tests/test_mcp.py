@@ -8,7 +8,7 @@ from ulanzi_tc002.server.config import Settings
 from ulanzi_tc002.server.mcp import build_mcp
 from ulanzi_tc002.server.registry import Registry
 
-GIF = b"GIF89a" + b"\x00" * 8
+from test_image import png_bytes
 
 
 class McpTests(unittest.IsolatedAsyncioTestCase):
@@ -34,7 +34,7 @@ class McpTests(unittest.IsolatedAsyncioTestCase):
                     image = await client.call_tool("create_app", {"name": "cat", "type": "image"})
                     self.assertFalse(image.is_error)
                     posted = await client.call_tool(
-                        "image_send", {"name": "cat", "image": image_data_uri(GIF)})
+                        "image_send", {"name": "cat", "image": image_data_uri(png_bytes())})
                     self.assertFalse(posted.is_error)
                     deleted = await client.call_tool("delete_app", {"name": "hello"})
                     self.assertFalse(deleted.is_error)

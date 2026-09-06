@@ -7,7 +7,7 @@ from ulanzi_tc002.frames import image_data_uri
 from ulanzi_tc002.server.config import Settings
 from ulanzi_tc002.server.main import create_app
 
-GIF = b"GIF89a" + b"\x00" * 8
+from test_image import png_bytes
 
 
 class ApiTests(unittest.TestCase):
@@ -83,11 +83,11 @@ class ApiTests(unittest.TestCase):
 
     def test_image_roundtrip(self):
         self._add("cat", "image")
-        posted = self.client.post("/api/apps/cat", json={"image": image_data_uri(GIF)})
+        posted = self.client.post("/api/apps/cat", json={"image": image_data_uri(png_bytes())})
         self.assertEqual(posted.status_code, 200)
         self.assertTrue(posted.json()["accepted"])
         current = self.client.get("/api/apps/cat").json()
-        self.assertTrue(current["image"].startswith("data:image/gif;base64,"))
+        self.assertTrue(current["image"].startswith("data:image/png;base64,"))
         frame = self.device.post.call_args.args[2]
         self.assertEqual(frame["image"][0]["position"], [0, 0])
 
@@ -95,7 +95,7 @@ class ApiTests(unittest.TestCase):
         self._add("hello")
         self.client.post("/api/apps/hello", json={"text": "HI", "color": "blue"})
         self._add("cat", "image")
-        self.client.post("/api/apps/cat", json={"image": image_data_uri(GIF)})
+        self.client.post("/api/apps/cat", json={"image": image_data_uri(png_bytes())})
         self.cm.__exit__(None, None, None)
         self.cm = self._client(Settings(data_dir=Path(self.tmp.name)))
         self.client = self.cm.__enter__()
@@ -103,7 +103,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(apps["hello"]["text"], "HI")
         self.assertEqual(apps["hello"]["type"], "text")
         self.assertEqual(apps["cat"]["type"], "image")
-        self.assertTrue(apps["cat"]["image"].startswith("data:image/gif;base64,"))
+        self.assertTrue(apps["cat"]["image"].startswith("data:image/png;base64,"))
 
     def test_migrates_legacy_enabled_text_app(self):
         (Path(self.tmp.name) / "config.json").write_text(
