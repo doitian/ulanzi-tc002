@@ -56,7 +56,7 @@ class TailTests(unittest.TestCase):
     @patch("ulanzi_tc002.client.cli.sys.stdin", new_callable=lambda: io.StringIO("\x1b[31mRED\x1b[0m\n\nEND"))
     def test_stdin_ansi_blank_and_eof(self, stdin, http_request, _config):
         http_request.return_value = {"accepted": True}
-        main(["text", "tail", "-", "--ansi", "--color", "blue"])
+        main(["text", "tail", "hello", "-", "--ansi", "--color", "blue"])
         payloads = [call.kwargs["json_body"] for call in http_request.call_args_list]
         self.assertEqual([p["text"] for p in payloads], ["\x1b[31mRED\x1b[0m", "", "END"])
         self.assertTrue(all(p["ansi"] and p["color"] == "#82AAE8" for p in payloads))

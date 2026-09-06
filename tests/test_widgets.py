@@ -21,11 +21,29 @@ class WidgetTests(unittest.TestCase):
     def test_send_uses_server_and_supports_empty_text(self, http_request, _config):
         http_request.return_value = {"accepted": True}
         for message in ["HELLO WORLD", ""]:
-            main(["text", "send", message, "--color", "blue"])
-            self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps/text")
+            main(["text", "send", "hello", message, "--color", "blue"])
+            self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps/hello")
             self.assertEqual(http_request.call_args.kwargs["json_body"],
                              {"text": message, "color": "#82AAE8"})
             self.assertEqual(http_request.call_args.kwargs["method"], "POST")
+
+    @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
+    @patch("ulanzi_tc002.client.cli.request")
+    def test_image_send_and_apps_create_delete(self, http_request, _config):
+        http_request.return_value = {"accepted": True, "name": "cat", "deleted": True}
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "cat.gif"
+            path.write_bytes(b"GIF89a" + b"\x00" * 8)
+            main(["image", "send", "cat", str(path)])
+            self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps/cat")
+            self.assertTrue(http_request.call_args.kwargs["json_body"]["image"].startswith(
+                "data:image/gif;base64,"))
+        main(["apps", "create", "image", "cat"])
+        self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps")
+        self.assertEqual(http_request.call_args.kwargs["json_body"], {"name": "cat", "type": "image"})
+        main(["apps", "delete", "cat"])
+        self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps/cat")
+        self.assertEqual(http_request.call_args.kwargs["method"], "DELETE")
 
     def test_marquee_starts_visible_and_repeats_with_half_screen_gap(self):
         from ulanzi_tc002.ansi_text import marquee_offsets

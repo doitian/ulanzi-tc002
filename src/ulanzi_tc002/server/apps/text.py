@@ -1,7 +1,7 @@
 import threading
 
 from ulanzi_tc002.frames import blank_frame, publish, scroll_frames, text_frame
-from ulanzi_tc002.server.apps.base import App, AppDisabled
+from ulanzi_tc002.server.apps.base import App
 
 
 class TextWidget:
@@ -96,39 +96,60 @@ class TextWidget:
 
 
 class TextApp(App):
-    name = "text"
+    type = "text"
     title = "Text"
 
-    def __init__(self, device, tick):
-        super().__init__()
+    def __init__(self, device, tick, name):
+        super().__init__(name)
         self.device = device
         self.tick = tick
-        self.widget = TextWidget(device, self.name, tick, publish, scroll_frames)
+        self.widget = TextWidget(device, name, tick, publish, scroll_frames)
 
-    def start(self):
-        self.widget = TextWidget(self.device, self.name, self.tick, publish, scroll_frames)
-        self.widget.worker.start()
-        self.enabled = True
+    def restore(self, item):
+        text = item.get("text")
+        if not isinstance(text, str):
+            return
+        color = item.get("color", "white")
+        ansi = item.get("ansi", False)
+        if not isinstance(color, str) or not isinstance(ansi, bool):
+            return
+        self._pending = {"text": text, "color": color, "ansi": ansi}
+
+    def start(self, create=False):
+        if self._started:
+            return
+        self._started = True
+        if self.widget.worker.ident is None:
+            self.widget.worker.start()
+        payload = self._pending
+        self._pending = None
+        if payload is not None:
+            try:
+                self.widget.update(payload)
+            except (OSError, ValueError, ConnectionError) as error:
+                print(f"Display restore failed: {error}", flush=True)
 
     def stop(self):
-        try:
-            self.device.post(publish, self.name, blank_frame())
-        except (OSError, ValueError, ConnectionError) as error:
-            print(f"Display clear failed: {error}", flush=True)
         self.widget.close()
-        self.enabled = False
 
     def update(self, payload):
-        if not self.enabled:
-            raise AppDisabled("App is disabled")
         return self.widget.update(payload)
+
+    def config(self):
+        data = {"type": self.type}
+        state = self.widget.state
+        if state is not None:
+            data["text"] = state[0]
+            data["color"] = state[1]
+            data["ansi"] = self.widget.ansi
+        return data
 
     def snapshot(self):
         state = self.widget.state
         return {
             "name": self.name,
+            "type": self.type,
             "title": self.title,
-            "enabled": self.enabled,
             "text": state[0] if state else None,
             "color": state[1] if state else None,
             "ansi": self.widget.ansi,

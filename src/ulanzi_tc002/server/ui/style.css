@@ -5,13 +5,23 @@
   color: #e6e6e6;
 }
 body { margin: 0; }
-main { max-width: 40rem; margin: 0 auto; padding: 1.5rem; }
+main { max-width: 48rem; margin: 0 auto; padding: 1.5rem; }
 h1, h2 { font-weight: 600; }
 h1 { font-size: 1.25rem; }
 h2 { font-size: 1rem; margin-top: 1.5rem; }
-label, .app { display: flex; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
-input[type="text"], input[type="password"], input:not([type]), select {
+label, .app { display: flex; gap: 0.5rem; align-items: center; margin: 0.4rem 0; flex-wrap: wrap; }
+.app {
+  cursor: default;
+  border: 1px solid #333;
+  padding: 0.6rem;
+}
+.app .heading { display: flex; gap: 0.75rem; align-items: baseline; width: 100%; }
+.app .heading span:first-child { font-weight: 600; min-width: 8rem; }
+.app .status { color: #9a9a9a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app button:last-child { margin-left: auto; }
+input[type="text"], input[type="password"], input:not([type]), select, input[type="file"] {
   flex: 1;
+  min-width: 8rem;
   background: #111;
   color: inherit;
   border: 1px solid #444;
@@ -25,4 +35,9 @@ button {
   cursor: pointer;
 }
 .error { color: #f38ba8; min-height: 1.2em; }
-.app span { min-width: 6rem; }
+.empty { color: #9a9a9a; }
+.preview {
+  image-rendering: pixelated;
+  height: 32px;
+  background: #000;
+}

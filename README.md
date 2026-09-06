@@ -3,6 +3,9 @@
 HTTP widgets for the 52x16 clock. The server owns the device and all apps.
 The `tc002` CLI is an HTTP client. Managed with uv.
 
+Create as many text and image apps as you want. Each app name is a DIY page on
+the clock; use the knob to cycle between them.
+
 ## Run the server
 
 Docker (recommended):
@@ -19,41 +22,56 @@ uv run tc002-server
 ```
 
 The server listens at `http://127.0.0.1:8008` (Docker binds `0.0.0.0:8008`).
-Open that URL for the web UI. MCP is at `/mcp`. Select the `text` DIY app on
-the clock knob. The first text POST creates it; POSTs do not switch the visible app.
+Open that URL for the web UI. MCP is at `/mcp`. The first POST to an app creates
+that DIY page on the clock; later POSTs update it and do not switch the visible
+app. Created apps are saved and restored when the server restarts.
 
 ```powershell
-uv run tc002 text send "HELLO WORLD" --color blue
-uv run tc002 text send ""
-uv run tc002 text tail status.log --ansi
+uv run tc002 apps create text hello
+uv run tc002 text send hello "HELLO WORLD" --color blue
+uv run tc002 text send hello ""
+uv run tc002 text tail hello status.log --ansi
+uv run tc002 apps create image cat
+uv run tc002 image send cat cat.gif
 uv run tc002 apps list
-uv run tc002 apps disable text
-uv run tc002 apps enable text
+uv run tc002 apps delete hello
 uv run tc002 status
 ```
 
-`text send` and `text tail` post to the server and never talk to the clock.
-File tailing still follows rotation, truncation, and a missing file; a blank
-line clears the display.
+`text send`, `text tail`, and `image send` post to the server and never talk to
+the clock. File tailing still follows rotation, truncation, and a missing file;
+a blank line clears the display.
 
 ## HTTP API
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8008/api/apps/text -Method Post -ContentType application/json -Body '{"text":"HELLO WORLD","color":"blue"}'
-Invoke-RestMethod http://127.0.0.1:8008/api/apps/text
+Invoke-RestMethod http://127.0.0.1:8008/api/apps -Method Post -ContentType application/json -Body '{"name":"hello","type":"text"}'
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/hello -Method Post -ContentType application/json -Body '{"text":"HELLO WORLD","color":"blue"}'
 Invoke-RestMethod http://127.0.0.1:8008/api/apps
-Invoke-RestMethod http://127.0.0.1:8008/api/apps/text/disable -Method Post
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/hello -Method Delete
+Invoke-RestMethod http://127.0.0.1:8008/api/apps -Method Post -ContentType application/json -Body '{"name":"cat","type":"image"}'
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/cat -Method Post -ContentType application/json -Body '{"image":"data:image/gif;base64,..."}'
 ```
 
-`GET/POST /text` is an alias for the text app. `POST /api/apps/text` requires a
-string `text` (up to 256 printable ASCII characters). Optional `color` accepts a
-case-insensitive name or `#RRGGBB`; it defaults to white. Optional `ansi`
-interprets foreground-color escapes. Invalid input returns 400; a disabled app
-returns 409; device failures return 502. Empty text, or ANSI with no visible
-characters, sends a black frame without deleting the DIY app.
+`POST /api/apps` requires `name` (1-32 letters, digits, `_` or `-`) and `type`
+(`text` or `image`). Duplicate names return 409. `DELETE /api/apps/{name}`
+removes the app from the server and the clock.
 
-Text that fits stays centered. Longer messages scroll left. Static/blank frames
-refresh every five seconds while the server runs.
+`POST /api/apps/{name}` on a text app requires a string `text` (up to 256
+printable ASCII characters). Optional `color` accepts a case-insensitive name or
+`#RRGGBB`; it defaults to white. Optional `ansi` interprets foreground-color
+escapes. Empty text, or ANSI with no visible characters, sends a black frame
+without deleting the DIY app.
+
+`POST /api/apps/{name}` on an image app requires `image`: a GIF or PNG as a
+`data:image/...;base64,...` URI or raw base64 (up to 2 MiB). GIFs loop on the
+device. Empty `image` sends a black frame. Optional `duration` is how long the
+clock shows that DIY page.
+
+Invalid input returns 400; unknown apps return 404; device failures return 502.
+
+Text that fits stays centered. Longer messages scroll left. Static/blank text
+frames refresh every five seconds while the server runs.
 
 Named colors: white, red, orange, yellow, green, mint, teal, cyan, blue, purple,
 pink, peach. ANSI colors use [Catppuccin Mocha](https://github.com/catppuccin/palette).
@@ -115,7 +133,8 @@ skipped; run with host networking so the scan sees the LAN, or set
 }
 ```
 
-Tools: `list_apps`, `get_app`, `enable_app`, `disable_app`, `text_send`, `text_get`.
+Tools: `list_apps`, `get_app`, `create_app`, `delete_app`, `text_send`,
+`text_get`, `image_send`, `image_get`.
 
 ## Docker image
 

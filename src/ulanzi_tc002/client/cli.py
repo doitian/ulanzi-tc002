@@ -1,11 +1,12 @@
 """TC002 HTTP client."""
 import argparse
 import json
+from pathlib import Path
 import sys
 
 from ulanzi_tc002.client.config import resolve_endpoint
 from ulanzi_tc002.colors import resolve_color
-from ulanzi_tc002.frames import text_frame
+from ulanzi_tc002.frames import image_data_uri, text_frame
 from ulanzi_tc002.http import request
 
 
@@ -27,7 +28,7 @@ def send_text(args):
     payload = {"text": args.send, "color": resolve_color(args.color)}
     if args.ansi:
         payload["ansi"] = True
-    result = api(args, "/api/apps/text", method="POST", json_body=payload)
+    result = api(args, f"/api/apps/{args.app}", method="POST", json_body=payload)
     if not isinstance(result, dict) or result.get("accepted") is not True:
         raise ValueError(f"Server rejected update: {result}")
     print(json.dumps(result), flush=True)
@@ -41,6 +42,14 @@ def tail_text(args):
         send_text(args)
 
 
+def send_image(args):
+    payload = {"image": image_data_uri(Path(args.path).read_bytes())}
+    result = api(args, f"/api/apps/{args.app}", method="POST", json_body=payload)
+    if not isinstance(result, dict) or result.get("accepted") is not True:
+        raise ValueError(f"Server rejected update: {result}")
+    print(json.dumps(result), flush=True)
+
+
 def apps_list(args):
     print(json.dumps(api(args, "/api/apps"), indent=2), flush=True)
 
@@ -49,12 +58,12 @@ def apps_show(args):
     print(json.dumps(api(args, f"/api/apps/{args.name}"), indent=2), flush=True)
 
 
-def apps_enable(args):
-    print(json.dumps(api(args, f"/api/apps/{args.name}/enable", method="POST", json_body={}), indent=2), flush=True)
+def apps_create(args):
+    print(json.dumps(api(args, "/api/apps", method="POST", json_body={"name": args.name, "type": args.type}), indent=2), flush=True)
 
 
-def apps_disable(args):
-    print(json.dumps(api(args, f"/api/apps/{args.name}/disable", method="POST", json_body={}), indent=2), flush=True)
+def apps_delete(args):
+    print(json.dumps(api(args, f"/api/apps/{args.name}", method="DELETE"), indent=2), flush=True)
 
 
 def run_status(args):
@@ -75,24 +84,34 @@ def build_parser():
     styling.add_argument("--color", default="white", help="Default color name or #RRGGBB (default: white)")
     styling.add_argument("--ansi", action="store_true", help="Interpret ANSI foreground colors")
     send = actions.add_parser("send", parents=[styling], help="Send text and exit")
+    send.add_argument("app", help="App name")
     send.add_argument("send", metavar="TEXT", help="Message; empty text clears the screen")
     send.set_defaults(handler=send_text)
     tail = actions.add_parser("tail", parents=[styling], help="Follow the last line of a file or stdin")
+    tail.add_argument("app", help="App name")
     tail.add_argument("tail", metavar="PATH", help="UTF-8 file path, or - for stdin")
     tail.set_defaults(handler=tail_text)
 
-    apps = commands.add_parser("apps", help="List and enable apps")
+    image = commands.add_parser("image", help="Image app client")
+    image_actions = image.add_subparsers(dest="image_command", required=True)
+    send_image_parser = image_actions.add_parser("send", help="Send a GIF or PNG")
+    send_image_parser.add_argument("app", help="App name")
+    send_image_parser.add_argument("path", metavar="FILE", help="GIF or PNG file")
+    send_image_parser.set_defaults(handler=send_image)
+
+    apps = commands.add_parser("apps", help="Create and delete apps")
     app_actions = apps.add_subparsers(dest="apps_command", required=True)
     app_actions.add_parser("list", help="List apps").set_defaults(handler=apps_list)
     show = app_actions.add_parser("show", help="Show one app")
     show.add_argument("name")
     show.set_defaults(handler=apps_show)
-    enable = app_actions.add_parser("enable", help="Enable an app")
-    enable.add_argument("name")
-    enable.set_defaults(handler=apps_enable)
-    disable = app_actions.add_parser("disable", help="Disable an app")
-    disable.add_argument("name")
-    disable.set_defaults(handler=apps_disable)
+    create = app_actions.add_parser("create", help="Create an app")
+    create.add_argument("type", choices=["text", "image"])
+    create.add_argument("name")
+    create.set_defaults(handler=apps_create)
+    delete = app_actions.add_parser("delete", help="Delete an app")
+    delete.add_argument("name")
+    delete.set_defaults(handler=apps_delete)
 
     commands.add_parser("status", help="List device components").set_defaults(handler=run_status)
     return parser
@@ -119,6 +138,11 @@ def main(argv=None):
                 elif args.send:
                     text_frame(args.send, args.color)
         except ValueError as error:
+            parser.error(str(error))
+    if args.command == "image":
+        try:
+            image_data_uri(Path(args.path).read_bytes())
+        except (OSError, ValueError) as error:
             parser.error(str(error))
     args.handler(args)
 

@@ -1,7 +1,17 @@
 import json
+import re
 import threading
 
+from ulanzi_tc002.frames import unpublish
+from ulanzi_tc002.server.apps.image import ImageApp
 from ulanzi_tc002.server.apps.text import TextApp
+
+KINDS = frozenset({"text", "image"})
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+
+
+class AppExists(ValueError):
+    pass
 
 
 class Registry:
@@ -9,11 +19,18 @@ class Registry:
         self.settings = settings
         self.device = device
         self.lock = threading.Lock()
-        self.apps = {"text": TextApp(device, settings.tick)}
+        self.apps = {}
         self._load()
 
     def _config_path(self):
         return self.settings.data_dir / "config.json"
+
+    def _make(self, name, kind):
+        if kind == "text":
+            return TextApp(self.device, self.settings.tick, name)
+        if kind == "image":
+            return ImageApp(self.device, name)
+        raise ValueError("Type must be text or image")
 
     def _load(self):
         path = self._config_path()
@@ -23,15 +40,28 @@ class Registry:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
-        for name, item in data.get("apps", {}).items():
-            app = self.apps.get(name)
-            if app is not None and isinstance(item, dict) and "enabled" in item:
-                app.enabled = bool(item["enabled"])
+        apps = data.get("apps")
+        if not isinstance(apps, dict):
+            return
+        for name, item in apps.items():
+            if not isinstance(item, dict) or not NAME_RE.fullmatch(name):
+                continue
+            kind = item.get("type")
+            if kind not in KINDS:
+                if name in KINDS and item.get("enabled", True):
+                    kind = name
+                else:
+                    continue
+            if item.get("enabled") is False:
+                continue
+            app = self._make(name, kind)
+            app.restore(item)
+            self.apps[name] = app
 
     def _save(self):
         path = self._config_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"apps": {name: {"enabled": app.enabled} for name, app in self.apps.items()}}
+        payload = {"apps": {name: app.config() for name, app in self.apps.items()}}
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         temporary.replace(path)
@@ -39,15 +69,12 @@ class Registry:
     def start(self):
         with self.lock:
             for app in self.apps.values():
-                if app.enabled:
-                    app.start()
+                app.start()
 
     def stop(self):
         with self.lock:
             for app in self.apps.values():
-                widget = getattr(app, "widget", None)
-                if widget is not None:
-                    widget.close()
+                app.stop()
 
     def get(self, name):
         try:
@@ -61,18 +88,36 @@ class Registry:
     def snapshot(self, name):
         return self.get(name).snapshot()
 
-    def enable(self, name):
+    def create(self, name, kind):
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+            raise ValueError("App name must be 1-32 letters, digits, _ or -")
+        if kind not in KINDS:
+            raise ValueError("Type must be text or image")
         with self.lock:
-            app = self.get(name)
-            if not app.enabled:
-                app.start()
+            if name in self.apps:
+                raise AppExists(name)
+            app = self._make(name, kind)
+            app.start(create=True)
+            self.apps[name] = app
             self._save()
             return app.snapshot()
 
-    def disable(self, name):
+    def delete(self, name):
+        if not isinstance(name, str) or not name:
+            raise ValueError("App name required")
         with self.lock:
-            app = self.get(name)
-            if app.enabled:
+            app = self.apps.pop(name, None)
+            if app is not None:
                 app.stop()
+                self._save()
+            try:
+                self.device.post(unpublish, name, {})
+            except (OSError, ValueError, ConnectionError) as error:
+                print(f"Display delete failed: {error}", flush=True)
+            return {"name": name, "deleted": True}
+
+    def update(self, name, payload):
+        with self.lock:
+            result = self.get(name).update(payload)
             self._save()
-            return app.snapshot()
+            return result

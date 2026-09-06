@@ -6,10 +6,9 @@ from pathlib import Path
 from ulanzi_tc002.colors import COLORS
 from ulanzi_tc002.device import Device
 from ulanzi_tc002.http import request
-from ulanzi_tc002.server.apps.base import AppDisabled
 from ulanzi_tc002.server.config import Settings
 from ulanzi_tc002.server.mcp import mcp_asgi_app
-from ulanzi_tc002.server.registry import Registry
+from ulanzi_tc002.server.registry import AppExists, Registry
 
 UI = Path(__file__).parent / "ui"
 PUBLIC_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/app.js", "/style.css")
@@ -75,42 +74,38 @@ def create_app(settings=None, device=None):
     def list_apps():
         return registry.list()
 
+    @app.post("/api/apps")
+    def add_app(payload: dict):
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Provide name and type")
+        name, kind = payload.get("name"), payload.get("type")
+        if not isinstance(name, str) or not isinstance(kind, str):
+            raise HTTPException(status_code=400, detail="Provide name and type")
+        try:
+            return registry.create(name, kind)
+        except AppExists:
+            raise HTTPException(status_code=409, detail="App already exists") from None
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @app.get("/api/apps/{name}")
     def show_app(name: str):
         return require_app(name).snapshot()
 
-    @app.post("/api/apps/{name}/enable")
-    def enable_app(name: str):
+    @app.post("/api/apps/{name}")
+    def update_app(name: str, payload: dict):
         require_app(name)
-        return registry.enable(name)
-
-    @app.post("/api/apps/{name}/disable")
-    def disable_app(name: str):
-        require_app(name)
-        return registry.disable(name)
-
-    def read_text():
-        return require_app("text").snapshot()
-
-    def write_text(payload: dict):
         try:
-            return require_app("text").update(payload)
-        except AppDisabled:
-            raise HTTPException(status_code=409, detail="App is disabled") from None
+            return registry.update(name, payload)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except ConnectionError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
-    @app.get("/api/apps/text")
-    @app.get("/text")
-    def get_text():
-        return read_text()
-
-    @app.post("/api/apps/text")
-    @app.post("/text")
-    def post_text(payload: dict):
-        return write_text(payload)
+    @app.delete("/api/apps/{name}")
+    def remove_app(name: str):
+        require_app(name)
+        return registry.delete(name)
 
     @app.get("/api/device")
     def device_status():
@@ -120,17 +115,24 @@ def create_app(settings=None, device=None):
         except (OSError, ValueError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
 
+    def ui_file(name, media_type=None):
+        return FileResponse(
+            UI / name,
+            media_type=media_type,
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/")
     def index():
-        return FileResponse(UI / "index.html")
+        return ui_file("index.html")
 
     @app.get("/app.js")
     def app_js():
-        return FileResponse(UI / "app.js", media_type="text/javascript")
+        return ui_file("app.js", "text/javascript")
 
     @app.get("/style.css")
     def app_css():
-        return FileResponse(UI / "style.css", media_type="text/css")
+        return ui_file("style.css", "text/css")
 
     return app
 

@@ -3,8 +3,11 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
+from ulanzi_tc002.frames import image_data_uri
 from ulanzi_tc002.server.config import Settings
 from ulanzi_tc002.server.main import create_app
+
+GIF = b"GIF89a" + b"\x00" * 8
 
 
 class ApiTests(unittest.TestCase):
@@ -25,38 +28,89 @@ class ApiTests(unittest.TestCase):
         self.cm.__exit__(None, None, None)
         self.tmp.cleanup()
 
+    def _add(self, name, kind="text"):
+        created = self.client.post("/api/apps", json={"name": name, "type": kind})
+        self.assertEqual(created.status_code, 200)
+        return created.json()
+
     def test_health_and_text_roundtrip(self):
         self.assertEqual(self.client.get("/api/health").json(), {"ok": True})
-        posted = self.client.post("/api/apps/text", json={"text": "HI", "color": "blue"})
+        self._add("hello")
+        posted = self.client.post("/api/apps/hello", json={"text": "HI", "color": "blue"})
         self.assertEqual(posted.status_code, 200)
         self.assertEqual(posted.json()["accepted"], True)
         self.assertEqual(posted.json()["color"], "#82AAE8")
-        current = self.client.get("/api/apps/text").json()
+        current = self.client.get("/api/apps/hello").json()
         self.assertEqual(current["text"], "HI")
-        alias = self.client.post("/text", json={"text": "OK"})
-        self.assertEqual(alias.status_code, 200)
-        self.assertEqual(self.client.get("/text").json()["text"], "OK")
+        self.assertEqual(current["type"], "text")
 
-    def test_disable_rejects_writes_and_enable_restores(self):
-        self.client.post("/api/apps/text", json={"text": "HI"})
-        disabled = self.client.post("/api/apps/text/disable")
-        self.assertFalse(disabled.json()["enabled"])
-        rejected = self.client.post("/api/apps/text", json={"text": "NO"})
-        self.assertEqual(rejected.status_code, 409)
-        enabled = self.client.post("/api/apps/text/enable")
-        self.assertTrue(enabled.json()["enabled"])
-        posted = self.client.post("/api/apps/text", json={"text": "YES"})
-        self.assertEqual(posted.status_code, 200)
-        self.assertEqual(posted.json()["text"], "YES")
+    def test_delete_removes_app(self):
+        self._add("hello")
+        self.client.post("/api/apps/hello", json={"text": "HI"})
+        deleted = self.client.delete("/api/apps/hello")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertTrue(deleted.json()["deleted"])
+        self.assertEqual(self.client.get("/api/apps/hello").status_code, 404)
+        rejected = self.client.post("/api/apps/hello", json={"text": "NO"})
+        self.assertEqual(rejected.status_code, 404)
 
     def test_unknown_app(self):
         self.assertEqual(self.client.get("/api/apps/missing").status_code, 404)
 
     def test_invalid_text_is_400(self):
-        response = self.client.post("/api/apps/text", json={"text": "not ascii \u2603"})
+        self._add("hello")
+        response = self.client.post("/api/apps/hello", json={"text": "not ascii \u2603"})
         self.assertEqual(response.status_code, 400)
 
-    def test_apps_list_includes_text(self):
+    def test_apps_list_starts_empty_and_create_duplicate(self):
+        self.assertEqual(self.client.get("/api/apps").json(), [])
+        self._add("hello")
+        names = [app["name"] for app in self.client.get("/api/apps").json()]
+        self.assertEqual(names, ["hello"])
+        duplicate = self.client.post("/api/apps", json={"name": "hello", "type": "text"})
+        self.assertEqual(duplicate.status_code, 409)
+
+    def test_multiple_apps_same_type(self):
+        self._add("one")
+        self._add("two")
+        self._add("cat", "image")
+        self.client.post("/api/apps/one", json={"text": "A"})
+        self.client.post("/api/apps/two", json={"text": "B"})
+        listed = {app["name"]: app for app in self.client.get("/api/apps").json()}
+        self.assertEqual(listed["one"]["text"], "A")
+        self.assertEqual(listed["two"]["text"], "B")
+        self.assertEqual(listed["cat"]["type"], "image")
+
+    def test_image_roundtrip(self):
+        self._add("cat", "image")
+        posted = self.client.post("/api/apps/cat", json={"image": image_data_uri(GIF)})
+        self.assertEqual(posted.status_code, 200)
+        self.assertTrue(posted.json()["accepted"])
+        current = self.client.get("/api/apps/cat").json()
+        self.assertTrue(current["image"].startswith("data:image/gif;base64,"))
+        frame = self.device.post.call_args.args[2]
+        self.assertEqual(frame["image"][0]["position"], [0, 0])
+
+    def test_apps_persist_across_restart(self):
+        self._add("hello")
+        self.client.post("/api/apps/hello", json={"text": "HI", "color": "blue"})
+        self._add("cat", "image")
+        self.client.post("/api/apps/cat", json={"image": image_data_uri(GIF)})
+        self.cm.__exit__(None, None, None)
+        self.cm = self._client(Settings(data_dir=Path(self.tmp.name)))
+        self.client = self.cm.__enter__()
+        apps = {app["name"]: app for app in self.client.get("/api/apps").json()}
+        self.assertEqual(apps["hello"]["text"], "HI")
+        self.assertEqual(apps["hello"]["type"], "text")
+        self.assertEqual(apps["cat"]["type"], "image")
+        self.assertTrue(apps["cat"]["image"].startswith("data:image/gif;base64,"))
+
+    def test_migrates_legacy_enabled_text_app(self):
+        (Path(self.tmp.name) / "config.json").write_text(
+            '{"apps": {"text": {"enabled": true}}}\n', encoding="utf-8")
+        self.cm.__exit__(None, None, None)
+        self.cm = self._client(Settings(data_dir=Path(self.tmp.name)))
+        self.client = self.cm.__enter__()
         names = [app["name"] for app in self.client.get("/api/apps").json()]
         self.assertEqual(names, ["text"])
 
@@ -82,5 +136,9 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/apps").status_code, 401)
         headers = {"Authorization": "Bearer secret"}
         self.assertEqual(self.client.get("/api/apps", headers=headers).status_code, 200)
-        posted = self.client.post("/api/apps/text", json={"text": "HI"}, headers=headers)
+        created = self.client.post(
+            "/api/apps", json={"name": "hello", "type": "text"}, headers=headers)
+        self.assertEqual(created.status_code, 200)
+        posted = self.client.post(
+            "/api/apps/hello", json={"text": "HI"}, headers=headers)
         self.assertEqual(posted.status_code, 200)

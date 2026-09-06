@@ -2,11 +2,12 @@ const tokenInput = document.getElementById("token");
 const authSection = document.getElementById("auth");
 const authError = document.getElementById("auth-error");
 const appsEl = document.getElementById("apps");
-const textStatus = document.getElementById("text-status");
-const textError = document.getElementById("text-error");
-const colorSelect = document.getElementById("color");
+const errorEl = document.getElementById("error");
+const createName = document.getElementById("create-name");
+const createType = document.getElementById("create-type");
 
 tokenInput.value = sessionStorage.getItem("tc002_token") || "";
+let colors = {};
 
 async function api(path, options = {}) {
   const token = sessionStorage.getItem("tc002_token") || "";
@@ -31,87 +32,170 @@ function setAuthVisible(visible) {
   authSection.hidden = !visible;
 }
 
+function showError(error) {
+  if (error && error.status === 401) {
+    setAuthVisible(true);
+    authError.textContent = "Token required";
+    return;
+  }
+  if (errorEl) errorEl.textContent = error ? error.message : "";
+}
+
+function colorOptions(selected) {
+  const select = document.createElement("select");
+  for (const name of Object.keys(colors)) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.append(option);
+  }
+  const match = Object.entries(colors).find(([, hex]) => hex === selected);
+  select.value = match ? match[0] : "white";
+  return select;
+}
+
+function readFileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderApps(apps) {
+  appsEl.replaceChildren();
+  if (!apps.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "No apps yet. Create a text or image app; it becomes a DIY page on the clock.";
+    appsEl.append(empty);
+    return;
+  }
+  for (const app of apps) {
+    const row = document.createElement("form");
+    row.className = "app";
+    const heading = document.createElement("div");
+    heading.className = "heading";
+    const title = document.createElement("span");
+    title.textContent = app.type ? `${app.name} (${app.type})` : app.name;
+    const status = document.createElement("span");
+    status.className = "status";
+    heading.append(title, status);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      errorEl.textContent = "";
+      try {
+        await api(`/api/apps/${app.name}`, { method: "DELETE" });
+        await load();
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    row.append(heading, remove);
+    if (app.type === "text") {
+      status.textContent = app.error ? "error: " + app.error : (app.text == null ? "(empty)" : app.text);
+      const text = document.createElement("input");
+      text.type = "text";
+      text.name = "text";
+      text.maxLength = 256;
+      text.value = app.text || "";
+      text.placeholder = "Message";
+      const color = colorOptions(app.color);
+      const ansiLabel = document.createElement("label");
+      const ansi = document.createElement("input");
+      ansi.type = "checkbox";
+      ansi.checked = Boolean(app.ansi);
+      ansiLabel.append(ansi, document.createTextNode(" ANSI"));
+      const send = document.createElement("button");
+      send.textContent = "Send";
+      row.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorEl.textContent = "";
+        try {
+          await api(`/api/apps/${app.name}`, {
+            method: "POST",
+            body: JSON.stringify({ text: text.value, color: color.value, ansi: ansi.checked }),
+          });
+          await load();
+        } catch (error) {
+          showError(error);
+        }
+      });
+      row.append(text, color, ansiLabel, send);
+    } else if (app.type === "image") {
+      status.textContent = app.error ? "error: " + app.error : (app.image ? "image set" : "(empty)");
+      const preview = document.createElement("img");
+      preview.className = "preview";
+      preview.alt = "";
+      if (app.image) preview.src = app.image;
+      else preview.hidden = true;
+      const file = document.createElement("input");
+      file.type = "file";
+      file.accept = "image/gif,image/png,.gif,.png";
+      const send = document.createElement("button");
+      send.textContent = "Send";
+      row.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorEl.textContent = "";
+        if (!file.files[0]) {
+          errorEl.textContent = "Choose a GIF or PNG";
+          return;
+        }
+        try {
+          const image = await readFileDataUrl(file.files[0]);
+          await api(`/api/apps/${app.name}`, {
+            method: "POST",
+            body: JSON.stringify({ image }),
+          });
+          await load();
+        } catch (error) {
+          showError(error);
+        }
+      });
+      row.append(preview, file, send);
+    } else {
+      status.textContent = "on device";
+    }
+    appsEl.append(row);
+  }
+}
+
 document.getElementById("save-token").addEventListener("click", () => {
   sessionStorage.setItem("tc002_token", tokenInput.value);
   authError.textContent = "";
   load();
 });
 
-document.getElementById("text-form").addEventListener("submit", async (event) => {
+document.getElementById("create-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  textError.textContent = "";
+  errorEl.textContent = "";
   try {
-    await api("/api/apps/text", {
+    await api("/api/apps", {
       method: "POST",
-      body: JSON.stringify({
-        text: document.getElementById("text").value,
-        color: colorSelect.value || "white",
-        ansi: document.getElementById("ansi").checked,
-      }),
+      body: JSON.stringify({ name: createName.value, type: createType.value }),
     });
+    createName.value = "";
     await load();
   } catch (error) {
-    if (error.status === 401) setAuthVisible(true);
-    textError.textContent = error.message;
+    showError(error);
   }
 });
 
-function renderApps(apps) {
-  appsEl.replaceChildren();
-  for (const app of apps) {
-    const row = document.createElement("div");
-    row.className = "app";
-    const name = document.createElement("span");
-    name.textContent = app.title || app.name;
-    const toggle = document.createElement("input");
-    toggle.type = "checkbox";
-    toggle.checked = app.enabled;
-    toggle.addEventListener("change", async () => {
-      try {
-        const action = toggle.checked ? "enable" : "disable";
-        await api(`/api/apps/${app.name}/${action}`, { method: "POST", body: "{}" });
-        await load();
-      } catch (error) {
-        toggle.checked = app.enabled;
-        if (error.status === 401) setAuthVisible(true);
-        textError.textContent = error.message;
-      }
-    });
-    row.append(name, toggle, document.createTextNode(app.enabled ? "on" : "off"));
-    appsEl.append(row);
-  }
-}
-
 async function load() {
   try {
-    const [apps, colors, text] = await Promise.all([
-      api("/api/apps"),
-      api("/api/colors"),
-      api("/api/apps/text"),
-    ]);
+    const [apps, palette] = await Promise.all([api("/api/apps"), api("/api/colors")]);
     setAuthVisible(false);
     authError.textContent = "";
-    if (!colorSelect.options.length) {
-      for (const name of Object.keys(colors)) {
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        colorSelect.append(option);
-      }
-      colorSelect.value = "white";
-    }
+    errorEl.textContent = "";
+    colors = palette;
     renderApps(apps);
-    const current = text.text == null ? "(empty)" : text.text;
-    textStatus.textContent = text.enabled
-      ? `${current} ${text.color || ""} ${text.error ? "error: " + text.error : ""}`
-      : "disabled";
   } catch (error) {
-    if (error.status === 401) {
-      setAuthVisible(true);
-      authError.textContent = "Token required";
-      return;
-    }
-    textError.textContent = error.message;
+    showError(error);
   }
 }
 
