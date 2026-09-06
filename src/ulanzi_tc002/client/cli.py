@@ -123,7 +123,7 @@ def build_parser():
     watch = commands.add_parser("watch", help="Watch agent status")
     watch_sources = watch.add_subparsers(dest="watch_command", required=True)
     agents = watch_sources.add_parser("agents", help="Watch provider sessions")
-    agents.add_argument("--providers", required=True, help="Comma-separated providers (opencode,claude)")
+    agents.add_argument("--providers", required=True, help="Comma-separated providers (opencode,claude,codex,grok)")
     agents.add_argument("--bridge-host", default="127.0.0.1", help="Bridge bind host (default: 127.0.0.1)")
     agents.add_argument("--bridge-port", type=int, default=8009, help="Bridge bind port (default: 8009)")
     agents.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds (default: 1)")

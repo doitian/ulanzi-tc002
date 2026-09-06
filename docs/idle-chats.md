@@ -1,7 +1,8 @@
 # Idle chats
 
 The clock count is not "how many chats exist". Switching to a new chat must
-not stack idle leftovers. These rules are shared by OpenCode and Claude.
+not stack idle leftovers. These rules are shared by OpenCode, Claude, Codex,
+and Grok.
 
 A session is tracked only after it has gone ASK or RUN. Historical chats and
 a brand-new empty chat are not counted.
@@ -27,11 +28,15 @@ one idle top-level chat.
 
 ## Children
 
-Subagent sessions count while they run or ask. They are dropped as soon as
-they go idle. They never become the idle representative.
+OpenCode, Claude, and Codex count subagent sessions while they run or ask.
+They are dropped as soon as they go idle. They never become the idle
+representative. Grok ignores child events; see
+[grok-session-counts.md](grok-session-counts.md).
 
 ## Per provider
 
 When each event prunes, and what "process or source" means, is in
-[opencode-session-counts.md](opencode-session-counts.md) and
-[claude-session-counts.md](claude-session-counts.md).
+[opencode-session-counts.md](opencode-session-counts.md),
+[claude-session-counts.md](claude-session-counts.md),
+[codex-session-counts.md](codex-session-counts.md), and
+[grok-session-counts.md](grok-session-counts.md).

@@ -132,6 +132,8 @@ class WatchCliTests(unittest.TestCase):
         self.assertEqual(parse_providers("opencode,opencode"), ["opencode"])
         self.assertEqual(parse_providers("claude"), ["claude"])
         self.assertEqual(parse_providers("opencode,claude"), ["opencode", "claude"])
+        self.assertEqual(parse_providers("codex"), ["codex"])
+        self.assertEqual(parse_providers("grok"), ["grok"])
         with self.assertRaises(ValueError):
             parse_providers("nope")
 

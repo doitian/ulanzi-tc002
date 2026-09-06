@@ -3,8 +3,11 @@ import json
 import threading
 import time
 
-from ulanzi_tc002.client.claude import apply_agents, apply_hook, reports
+from ulanzi_tc002.client import claude, codex, grok
 from ulanzi_tc002.client.opencode import summarize
+
+HOOKS = {"claude": claude, "codex": codex, "grok": grok}
+HOOK_IDS = ("desktop", "cli")
 
 STALE_SECONDS = 5
 DEFAULT_HOST = "127.0.0.1"
@@ -22,10 +25,13 @@ class BridgeStore:
     def update(self, provider, payload):
         if not isinstance(payload, dict):
             raise ValueError("Provide a JSON object")
-        if payload.get("hook_event_name"):
+        if payload.get("hook_event_name") or payload.get("hookEventName"):
+            mod = HOOKS.get(provider)
+            if mod is None:
+                raise ValueError("Unknown hook provider")
             with self.lock:
                 bucket = self.hooks.setdefault(provider, {})
-                apply_hook(bucket, payload, self.desktop_ids)
+                mod.apply_hook(bucket, payload, self.desktop_ids)
                 self._flush_hooks(provider, time.time())
             return
         instance = payload.get("id")
@@ -52,12 +58,23 @@ class BridgeStore:
     def merge_agents(self, provider, rows):
         with self.lock:
             bucket = self.hooks.setdefault(provider, {})
-            apply_agents(bucket, rows)
+            claude.apply_agents(bucket, rows)
+            self._flush_hooks(provider, time.time())
+
+    def reap_live(self, provider):
+        mod = HOOKS.get(provider)
+        reap = getattr(mod, "reap", None)
+        live_ids = getattr(mod, "live_ids", None)
+        if not callable(reap) or not callable(live_ids):
+            return
+        with self.lock:
+            reap(self.hooks.get(provider, {}), live_ids())
             self._flush_hooks(provider, time.time())
 
     def _flush_hooks(self, provider, now):
+        mod = HOOKS.get(provider, claude)
         live = set()
-        for report in reports(self.hooks.get(provider, {})):
+        for report in mod.reports(self.hooks.get(provider, {})):
             live.add(report["id"])
             self.instances[(provider, report["id"])] = {
                 "status": report["status"],
@@ -66,7 +83,7 @@ class BridgeStore:
             }
         for key in [
             key for key in self.instances
-            if key[0] == provider and key[1] in ("desktop", "cli") and key[1] not in live
+            if key[0] == provider and key[1] in HOOK_IDS and key[1] not in live
         ]:
             del self.instances[key]
 

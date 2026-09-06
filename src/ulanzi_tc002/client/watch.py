@@ -4,9 +4,11 @@ import time
 from ulanzi_tc002.client.badge import badge_image
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.claude import install_hooks, list_agents, remove_hooks
+from ulanzi_tc002.client.codex import install_hooks as install_codex_hooks, remove_hooks as remove_codex_hooks
+from ulanzi_tc002.client.grok import install_hooks as install_grok_hooks, remove_hooks as remove_grok_hooks
 from ulanzi_tc002.client.opencode import install_plugin, remove_plugin
 
-KNOWN_PROVIDERS = ("opencode", "claude")
+KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok")
 
 
 def parse_providers(value):
@@ -80,9 +82,45 @@ class ClaudeProvider:
         remove_hooks()
 
 
+class CodexProvider:
+    name = "codex"
+
+    def setup(self, bridge_url, store=None):
+        install_codex_hooks(bridge_url)
+
+    def teardown(self):
+        remove_codex_hooks()
+
+
+class GrokProvider:
+    name = "grok"
+
+    def setup(self, bridge_url, store=None):
+        self.store = store
+        self.stop = threading.Event()
+        install_grok_hooks(bridge_url)
+        if store is not None:
+            store.reap_live(self.name)
+        self.thread = threading.Thread(target=self._poll, daemon=True)
+        self.thread.start()
+
+    def _poll(self):
+        while not self.stop.wait(1):
+            if self.store is None:
+                continue
+            self.store.reap_live(self.name)
+
+    def teardown(self):
+        self.stop.set()
+        self.thread.join(timeout=2)
+        remove_grok_hooks()
+
+
 PROVIDERS = {
     OpencodeProvider.name: OpencodeProvider,
     ClaudeProvider.name: ClaudeProvider,
+    CodexProvider.name: CodexProvider,
+    GrokProvider.name: GrokProvider,
 }
 
 
