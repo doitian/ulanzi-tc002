@@ -5,10 +5,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY pyproject.toml README.md ./
-COPY src ./src
-RUN python -m venv /venv \
+RUN mkdir -p src/ulanzi_tc002 && : > src/ulanzi_tc002/__init__.py \
+ && python -m venv /venv \
  && /venv/bin/pip install --no-cache-dir --upgrade pip \
- && /venv/bin/pip install --no-cache-dir .[server] \
+ && /venv/bin/pip install --no-cache-dir .[server]
+COPY src ./src
+RUN /venv/bin/pip install --no-cache-dir --no-deps --force-reinstall . \
  && /venv/bin/pip uninstall -y pip setuptools \
  && find /venv -type d -name __pycache__ -print0 | xargs -0 rm -rf
 
