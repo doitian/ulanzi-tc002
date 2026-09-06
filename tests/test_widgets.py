@@ -11,8 +11,9 @@ from ulanzi_tc002.server.apps.text import TextWidget
 
 
 class WidgetTests(unittest.TestCase):
+    @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
     @patch("ulanzi_tc002.client.cli.request")
-    def test_send_uses_server_and_supports_empty_text(self, http_request):
+    def test_send_uses_server_and_supports_empty_text(self, http_request, _config):
         http_request.return_value = {"accepted": True}
         for message in ["HELLO WORLD", ""]:
             main(["text", "send", message, "--color", "blue"])

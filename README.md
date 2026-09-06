@@ -60,8 +60,18 @@ pink, peach. ANSI colors use [Catppuccin Mocha](https://github.com/catppuccin/pa
 
 ## Auth, proxy, device
 
+The CLI reads `~/.config/ulanzi-tc002/config.toml` (`$XDG_CONFIG_HOME` if set):
+
+```toml
+url = "http://127.0.0.1:8008"
+token = "optional"
+```
+
+`[server] url` / `token` work too. `--url`, `--host`, `--port`, `--token` and
+`TC002_SERVER_URL` override the file. `--host` / `--port` change parts of the URL.
+
 If `TC002_TOKEN` is set, API, UI, and MCP require `Authorization: Bearer`.
-`GET /api/health` stays open. The CLI uses `--token` or `TC002_TOKEN`.
+`GET /api/health` stays open. The CLI uses `--token`, the config file, or `TC002_TOKEN`.
 
 Outbound HTTP uses `TC002_HTTP_PROXY` or `HTTP_PROXY`. Destinations on LAN
 (RFC1918, loopback, link-local, ULA), `localhost`, and `NO_PROXY` skip the
@@ -74,8 +84,10 @@ Device cache lives in `%LOCALAPPDATA%/ulanzi-tc002` on Windows, or
 | Variable | Role |
 | --- | --- |
 | `TC002_HOST` / `TC002_PORT` | Server bind (default `127.0.0.1:8008`; Docker `0.0.0.0`) |
-| `TC002_SERVER_HOST` / `TC002_SERVER_PORT` | CLI target |
+| `TC002_SERVER_URL` | CLI server endpoint |
+| `TC002_SERVER_HOST` / `TC002_SERVER_PORT` | CLI host/port overrides |
 | `TC002_TOKEN` | Optional bearer token |
+| `TC002_CLIENT_CONFIG` | Alternate client config.toml path |
 | `TC002_HTTP_PROXY` | Outbound proxy; LAN skipped |
 | `TC002_DEVICE_IP` / `TC002_DEVICE_MAC` / `TC002_DEVICE_NETWORK` | Clock identity |
 | `TC002_DATA_DIR` | Config and device cache |

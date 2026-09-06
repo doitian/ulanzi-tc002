@@ -51,9 +51,10 @@ class TailTests(unittest.TestCase):
             path.write_bytes(b"FIRST\nLAST")
             self.assertEqual(FileTail(path).poll(), "LAST")
 
+    @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
     @patch("ulanzi_tc002.client.cli.request")
     @patch("ulanzi_tc002.client.cli.sys.stdin", new_callable=lambda: io.StringIO("\x1b[31mRED\x1b[0m\n\nEND"))
-    def test_stdin_ansi_blank_and_eof(self, stdin, http_request):
+    def test_stdin_ansi_blank_and_eof(self, stdin, http_request, _config):
         http_request.return_value = {"accepted": True}
         main(["text", "tail", "-", "--ansi", "--color", "blue"])
         payloads = [call.kwargs["json_body"] for call in http_request.call_args_list]

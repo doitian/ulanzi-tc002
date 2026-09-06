@@ -1,17 +1,16 @@
 """TC002 HTTP client."""
 import argparse
 import json
-import os
 import sys
 
+from ulanzi_tc002.client.config import resolve_endpoint
 from ulanzi_tc002.colors import resolve_color
 from ulanzi_tc002.frames import text_frame
 from ulanzi_tc002.http import request
 
 
 def server_url(args, path):
-    host = f"[{args.host}]" if ":" in args.host else args.host
-    return f"http://{host}:{args.port}{path}"
+    return args.url.rstrip("/") + path
 
 
 def api(args, path, method="GET", json_body=None, timeout=30):
@@ -64,12 +63,10 @@ def run_status(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default=os.environ.get("TC002_SERVER_HOST", "127.0.0.1"),
-                        help="Server host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("TC002_SERVER_PORT", "8008")),
-                        help="Server port (default: 8008)")
-    parser.add_argument("--token", default=os.environ.get("TC002_TOKEN"),
-                        help="Bearer token; defaults to TC002_TOKEN")
+    parser.add_argument("--url", help="Server URL (default: config.toml or http://127.0.0.1:8008)")
+    parser.add_argument("--host", help="Override server host")
+    parser.add_argument("--port", type=int, help="Override server port")
+    parser.add_argument("--token", help="Bearer token; defaults to config or TC002_TOKEN")
     commands = parser.add_subparsers(dest="command", required=True)
 
     text = commands.add_parser("text", help="Text app client")
@@ -104,8 +101,12 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not 1 <= args.port <= 65535:
-        parser.error("--port must be 1..65535")
+    try:
+        endpoint = resolve_endpoint(args.url, args.host, args.port, args.token)
+    except ValueError as error:
+        parser.error(str(error))
+    args.url, args.token, args.host, args.port = (
+        endpoint["url"], endpoint["token"], endpoint["host"], endpoint["port"])
     if args.command == "text":
         try:
             resolve_color(args.color)
