@@ -4,10 +4,7 @@ services:
     build: .
     ports:
       - "8008:8008"
-    environment:
-      TC002_DEVICE_IP: "10.31.3.197"
-      # TC002_TOKEN: ""
-      # TC002_HTTP_PROXY: "http://host.docker.internal:7890"
+    # TC002_DEVICE_IP / TC002_DEVICE_NETWORK if LAN scan cannot see the clock
     volumes:
       - tc002-data:/data
 

@@ -115,6 +115,7 @@ def create_app(settings=None, device=None):
     @app.get("/api/device")
     def device_status():
         try:
+            device.ensure_address()
             return request(f"http://{device.address}/api/customList", timeout=5)
         except (OSError, ValueError) as error:
             raise HTTPException(status_code=502, detail=str(error)) from error

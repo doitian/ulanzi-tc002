@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,6 +9,10 @@ from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.device import Device
 from ulanzi_tc002.frames import blank_frame, publish, scroll_frames
 from ulanzi_tc002.server.apps.text import TextWidget
+
+
+def write_device_cache(path, ip="192.0.2.10"):
+    path.write_text(json.dumps({"ip": ip, "mac": "ccc4b277a363", "network": "192.0.2.0/24"}) + "\n")
 
 
 class WidgetTests(unittest.TestCase):
@@ -67,26 +72,40 @@ class WidgetTests(unittest.TestCase):
     def test_success_uses_cache_without_lookup(self, discover):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / "device.json"
+            write_device_cache(cache)
             client = Device(cache=cache)
             client.post(Mock(return_value={"code": 200}), "info", {})
             discover.assert_not_called()
-            self.assertEqual(Device(cache=cache).address, "10.31.3.197")
+            self.assertEqual(Device(cache=cache).address, "192.0.2.10")
 
-    @patch("ulanzi_tc002.device.discover", return_value="10.31.3.198")
-    def test_network_failure_discovers_retries_and_persists(self, discover):
+    @patch("ulanzi_tc002.device.discover", return_value="192.0.2.11")
+    def test_missing_cache_scans_on_first_post(self, discover):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / "device.json"
             client = Device(cache=cache)
+            self.assertIsNone(client.address)
+            client.post(Mock(return_value={"code": 200}), "info", {})
+            discover.assert_called_once()
+            self.assertEqual(Device(cache=cache).address, "192.0.2.11")
+
+    @patch("ulanzi_tc002.device.discover", return_value="192.0.2.11")
+    def test_network_failure_discovers_retries_and_persists(self, discover):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "device.json"
+            write_device_cache(cache)
+            client = Device(cache=cache)
             sender = Mock(side_effect=[URLError("timed out"), {"code": 200}])
             client.post(sender, "info", {})
-            self.assertEqual(sender.call_args_list[1].args[0], "10.31.3.198")
-            self.assertEqual(Device(cache=cache).address, "10.31.3.198")
+            self.assertEqual(sender.call_args_list[1].args[0], "192.0.2.11")
+            self.assertEqual(Device(cache=cache).address, "192.0.2.11")
             discover.assert_called_once()
 
     @patch("ulanzi_tc002.device.discover")
     def test_http_error_does_not_discover(self, discover):
         with tempfile.TemporaryDirectory() as directory:
-            client = Device(cache=Path(directory) / "device.json")
+            cache = Path(directory) / "device.json"
+            write_device_cache(cache)
+            client = Device(cache=cache)
             sender = Mock(side_effect=HTTPError("http://clock", 500, "error", {}, None))
             with self.assertRaises(HTTPError):
                 client.post(sender, "info", {})
