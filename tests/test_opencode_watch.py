@@ -21,12 +21,17 @@ class SummarizeTests(unittest.TestCase):
             {"a", "d"},
         )
         self.assertEqual((kind, count), ("ask", 2))
-        self.assertEqual(counts, {"ask": 2, "run": 1, "idle": 0})
+        self.assertEqual(counts, {"ask": 2, "run": 1, "idle": 1})
 
     def test_run_includes_retry_when_nothing_blocks(self):
         kind, count, counts = summarize({"a": "busy", "b": "retry", "c": "idle"}, set())
         self.assertEqual((kind, count), ("run", 2))
-        self.assertEqual(counts, {"ask": 0, "run": 2, "idle": 0})
+        self.assertEqual(counts, {"ask": 0, "run": 2, "idle": 1})
+
+    def test_idle_after_run_when_nothing_else_is_active(self):
+        kind, count, counts = summarize({"a": "idle", "b": "idle"}, set())
+        self.assertEqual((kind, count), ("idle", 2))
+        self.assertEqual(counts, {"ask": 0, "run": 0, "idle": 2})
 
     def test_idle_zero_when_empty(self):
         kind, count, counts = summarize({}, set())
@@ -68,7 +73,7 @@ class BridgeTests(unittest.TestCase):
         })
         kind, count, counts = store.snapshot("opencode")
         self.assertEqual((kind, count), ("ask", 1))
-        self.assertEqual(counts, {"ask": 1, "run": 1, "idle": 0})
+        self.assertEqual(counts, {"ask": 1, "run": 1, "idle": 1})
         kind, count, counts = store.snapshot("opencode", now=store.instances[("opencode", "1")]["updated"] + 6)
         self.assertEqual((kind, count), ("idle", 0))
 
@@ -128,7 +133,8 @@ class WatchCliTests(unittest.TestCase):
             self.assertTrue(bodies[1]["image"].startswith("data:image/png;base64,"))
             self.assertEqual(methods[-1], "DELETE")
             self.assertTrue(paths[-1].endswith("/api/apps/opencode"))
-            self.assertIn("opencode IDLE 0", stdout.getvalue())
+            self.assertIn("opencode IDLE", stdout.getvalue())
+            self.assertNotIn("IDLE 0", stdout.getvalue())
 
     @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
     @patch("ulanzi_tc002.client.cli.request")
@@ -145,7 +151,8 @@ class WatchCliTests(unittest.TestCase):
                 main(["watch", "agents", "--providers", "opencode", "--once", "--bridge-port", "0"])
                 self.assertFalse(plugin_path(environ).exists())
             self.assertEqual(cli_request.call_args_list[-1].kwargs["method"], "DELETE")
-            self.assertIn("opencode IDLE 0", stdout.getvalue())
+            self.assertIn("opencode IDLE", stdout.getvalue())
+            self.assertNotIn("IDLE 0", stdout.getvalue())
 
     def test_plugin_source_rewrites_bridge_url(self):
         source = plugin_source("http://127.0.0.1:8010")

@@ -37,9 +37,10 @@ def summarize(status_by_id, blocking):
     blocking = set(blocking)
     ask = len(blocking)
     run = sum(1 for sid, kind in status_by_id.items() if sid not in blocking and kind in RUNNING)
-    counts = {"ask": ask, "run": run, "idle": 0}
+    idle = sum(1 for sid, kind in status_by_id.items() if sid not in blocking and kind == "idle")
+    counts = {"ask": ask, "run": run, "idle": idle}
     if ask:
         return "ask", ask, counts
     if run:
         return "run", run, counts
-    return "idle", 0, counts
+    return "idle", idle, counts

@@ -37,10 +37,8 @@ def send_badge(api, args, name, kind, count, counts):
     result = api(args, f"/api/apps/{name}", method="POST", json_body={"image": badge_image(kind, count, name)})
     if not isinstance(result, dict) or result.get("accepted") is not True:
         raise ValueError(f"Server rejected update: {result}")
-    print(
-        f"{name} {kind.upper()} {count} (ask={counts['ask']} run={counts['run']} idle={counts['idle']})",
-        flush=True,
-    )
+    label = f"{name} {kind.upper()}" if count == 0 else f"{name} {kind.upper()} {count}"
+    print(f"{label} (ask={counts['ask']} run={counts['run']} idle={counts['idle']})", flush=True)
 
 
 class OpencodeProvider:

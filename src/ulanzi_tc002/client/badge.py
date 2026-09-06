@@ -128,22 +128,22 @@ def _blit(canvas, sprite, x0, y0):
 
 def compose(kind, count, provider="opencode"):
     color = STATUS_COLOR[kind]
-    text = str(count)
-    digits = [_paint(_DIGITS[ch], color) for ch in text]
-    digit_w = 5 * len(digits) + max(0, len(digits) - 1)
+    digits = [_paint(_DIGITS[ch], color) for ch in str(count)] if count else []
+    digit_w = 5 * len(digits) + max(0, len(digits) - 1) if digits else 0
     gap = 2
-    width = ICON + gap + digit_w + gap + ICON
+    width = ICON + gap + ICON if not digits else ICON + gap + digit_w + gap + ICON
     if width > WIDTH:
         gap = 1
-        width = ICON + gap + digit_w + gap + ICON
+        width = ICON + gap + ICON if not digits else ICON + gap + digit_w + gap + ICON
     x = max(0, (WIDTH - width) // 2)
     canvas = [[BLACK] * WIDTH for _ in range(HEIGHT)]
     _blit(canvas, OPENCODE, x, 0)
     x += ICON + gap
-    y = (HEIGHT - 7) // 2
-    for index, digit in enumerate(digits):
-        _blit(canvas, digit, x + index * 6, y)
-    x += digit_w + gap
+    if digits:
+        y = (HEIGHT - 7) // 2
+        for index, digit in enumerate(digits):
+            _blit(canvas, digit, x + index * 6, y)
+        x += digit_w + gap
     _blit(canvas, STATUSES[kind], x, 0)
     return canvas
 
