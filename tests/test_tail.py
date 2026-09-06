@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import tc002
-from tail_client import FileTail
+from ulanzi_tc002.client.cli import main
+from ulanzi_tc002.client.tail import FileTail
 
 
 class TailTests(unittest.TestCase):
@@ -51,13 +51,11 @@ class TailTests(unittest.TestCase):
             path.write_bytes(b"FIRST\nLAST")
             self.assertEqual(FileTail(path).poll(), "LAST")
 
-    @patch("tc002.urllib.request.build_opener")
-    @patch("tc002.sys.stdin", new_callable=lambda: io.StringIO("\x1b[31mRED\x1b[0m\n\nEND"))
-    def test_stdin_ansi_blank_and_eof(self, stdin, opener):
-        import json
-        response = opener.return_value.open.return_value.__enter__.return_value
-        response.read.return_value = b'{"accepted":true}'
-        tc002.main(["text", "tail", "-", "--ansi", "--color", "blue"])
-        payloads = [json.loads(call.args[0].data) for call in opener.return_value.open.call_args_list]
+    @patch("ulanzi_tc002.client.cli.request")
+    @patch("ulanzi_tc002.client.cli.sys.stdin", new_callable=lambda: io.StringIO("\x1b[31mRED\x1b[0m\n\nEND"))
+    def test_stdin_ansi_blank_and_eof(self, stdin, http_request):
+        http_request.return_value = {"accepted": True}
+        main(["text", "tail", "-", "--ansi", "--color", "blue"])
+        payloads = [call.kwargs["json_body"] for call in http_request.call_args_list]
         self.assertEqual([p["text"] for p in payloads], ["\x1b[31mRED\x1b[0m", "", "END"])
         self.assertTrue(all(p["ansi"] and p["color"] == "#82AAE8" for p in payloads))

@@ -1,15 +1,12 @@
 """ANSI SGR foreground colors for the TC002 pixel text renderer."""
 import re
 
-# Catppuccin Mocha: https://github.com/catppuccin/palette
 PALETTE = ["#45475A", "#F38BA8", "#A6E3A1", "#F9E2AF",
            "#89B4FA", "#F5C2E7", "#94E2D5", "#BAC2DE",
            "#585B70", "#F38BA8", "#A6E3A1", "#F9E2AF",
            "#89B4FA", "#F5C2E7", "#94E2D5", "#A6ADC8"]
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
 GLYPH_WIDTH = 6
-# Measured on the device font at fontHeight 10 (parse_ansi uppercases all
-# input); glyphs not listed here are GLYPH_WIDTH pixels wide.
 GLYPH_WIDTHS = {"M": 8, "N": 7, "W": 8, "X": 8,
                 **{digit: 5 for digit in "0123456789"}}
 
@@ -23,7 +20,6 @@ def text_width(glyphs):
 
 
 def marquee_offsets(width):
-    """One repeating cycle, initially visible, with a half-screen gap."""
     period = width + 26
     offset = 0
     while offset > -period:
@@ -46,7 +42,6 @@ def indexed_color(index):
 
 
 def parse_ansi(text, default):
-    """Return visible (character, foreground) pairs; ignore non-color SGR styles."""
     color, result, position = default, [], 0
     if len(text) > 4096:
         raise ValueError("ANSI text cannot exceed 4096 characters including escapes")
@@ -74,7 +69,6 @@ def parse_ansi(text, default):
             elif 90 <= code <= 97:
                 color = PALETTE[code - 90 + 8]
             elif code in (38, 48):
-                # Consume background color arguments too, but don't render them.
                 if i + 1 >= len(codes):
                     raise ValueError("Incomplete ANSI color escape")
                 mode = codes[i + 1]
@@ -92,8 +86,7 @@ def parse_ansi(text, default):
 
 
 def ansi_frames(glyphs):
-    """Lay out colored characters with a one-pixel gap and scroll as a unit."""
-    from text_server import blank_frame
+    from ulanzi_tc002.frames import blank_frame
     width = text_width(glyphs)
     if not width:
         yield blank_frame()
@@ -109,14 +102,12 @@ def ansi_frames(glyphs):
         for x in copies:
             for (char, color), start in zip(glyphs, starts):
                 left = x + start
-                # Spaces reserve their full advance without relying on a space glyph.
                 if char != " " and left < 52 and left + glyph_width(char) > 0:
                     elements.append({"content": char, "fontHeight": 10,
                                      "x": left, "y": 3, "color": color,
                                      "rect": [0, 0, 52, 16]})
         frame = blank_frame()
         frame["text"] = elements
-        # Avoid a black draw command overlaying text on firmware that draws last.
         if elements:
             frame.pop("draw")
         yield frame

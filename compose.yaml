@@ -1,0 +1,15 @@
+services:
+  tc002:
+    image: ghcr.io/doitian/ulanzi-tc002:latest
+    build: .
+    ports:
+      - "8008:8008"
+    environment:
+      TC002_DEVICE_IP: "10.31.3.197"
+      # TC002_TOKEN: ""
+      # TC002_HTTP_PROXY: "http://host.docker.internal:7890"
+    volumes:
+      - tc002-data:/data
+
+volumes:
+  tc002-data:

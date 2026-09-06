@@ -6,12 +6,26 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "mcp>=2",
+]
+
 [project.scripts]
-tc002 = "tc002:cli"
+tc002 = "ulanzi_tc002.client.cli:cli"
+tc002-server = "ulanzi_tc002.server.main:cli"
 
 [build-system]
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["tc002", "device", "text_server", "ansi_text", "tail_client"]
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"ulanzi_tc002.server" = ["ui/*"]

@@ -1,153 +1,123 @@
 # Ulanzi TC002 widgets
 
-HTTP widgets for the 52x16 clock. Managed with uv; no runtime dependencies.
+HTTP widgets for the 52x16 clock. The server owns the device and all apps.
+The `tc002` CLI is an HTTP client. Managed with uv.
 
-Install the command from this repository:
+## Run the server
 
-```powershell
-uv tool install .
-tc002 text serve
-tc002 text send "HELLO WORLD" --color blue
-tc002 text tail status.log --ansi
-```
-
-For an editable development installation, use `uv tool install --editable .`.
-If `tc002` is not on PATH, run `uv tool update-shell` and open a new terminal.
-After source changes, update a regular installation with `uv tool install --reinstall .`.
+Docker (recommended):
 
 ```powershell
-uv sync
-uv run tc002.py text serve
+docker compose up --build
 ```
 
-The text serve subcommand starts an HTTP server at `http://127.0.0.1:8008`.
-It waits for clients; it does not change the clock until the first request.
-
-From another terminal, send a message with the CLI:
+Or locally:
 
 ```powershell
-uv run tc002.py text send "HELLO WORLD" --color blue
-uv run tc002.py text send ""
+uv sync --extra server
+uv run tc002-server
 ```
 
-`text send` posts to the running server and exits. It defaults to white and uses
-`127.0.0.1:8008`; `--host` and `--port` select another server address.
-Use `text serve` to start the server. Use `text send TEXT` for one update or `text tail PATH` to follow new lines.
-
-Follow a UTF-8 file or standard input:
+The server listens at `http://127.0.0.1:8008` (Docker binds `0.0.0.0:8008`).
+Open that URL for the web UI. MCP is at `/mcp`. Select the `text` DIY app on
+the clock knob. The first text POST creates it; POSTs do not switch the visible app.
 
 ```powershell
-uv run tc002.py text tail status.log --color blue
-uv run tc002.py text tail status.log --ansi --color white
-Get-Content status.log -Tail 1 -Wait | uv run tc002.py text tail -
+uv run tc002 text send "HELLO WORLD" --color blue
+uv run tc002 text send ""
+uv run tc002 text tail status.log --ansi
+uv run tc002 apps list
+uv run tc002 apps disable text
+uv run tc002 apps enable text
+uv run tc002 status
 ```
 
-File mode sends the last existing line immediately, then checks every 0.25
-seconds for new complete lines. If several arrive together, it sends the latest.
-It follows file replacement/truncation and waits if the file is temporarily
-missing. An initial final line without a newline is displayed; subsequent
-partial lines wait for their terminating newline. Stdin mode forwards each line
-as it arrives, sends a final unterminated line at EOF, and then exits.
-A blank line clears the display. `--color` and `--ansi` apply to every update.
-Stop file following with Ctrl+C.
+`text send` and `text tail` post to the server and never talk to the clock.
+File tailing still follows rotation, truncation, and a missing file; a blank
+line clears the display.
 
-Use `--ansi` to interpret foreground-color escape sequences. In PowerShell 7,
-`` `e `` produces the actual ESC character:
+## HTTP API
 
 ```powershell
-uv run tc002.py text send "`e[31mRED `e[34mBLUE`e[0m" --ansi
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/text -Method Post -ContentType application/json -Body '{"text":"HELLO WORLD","color":"blue"}'
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/text
+Invoke-RestMethod http://127.0.0.1:8008/api/apps
+Invoke-RestMethod http://127.0.0.1:8008/api/apps/text/disable -Method Post
 ```
 
-The HTTP equivalent is `{"text":"\u001b[31mRED \u001b[34mBLUE\u001b[0m","ansi":true}`.
-Standard and bright ANSI colors (30–37, 90–97, indexed colors 0–15) use
-[Catppuccin Mocha](https://github.com/catppuccin/palette). Red is `#F38BA8`,
-blue `#89B4FA`, green `#A6E3A1`. `--color` sets the default foreground before
-any ANSI color escape; SGR 0 and 39 restore it (white when omitted).
-For example: `uv run tc002.py text send "DEFAULT" --ansi --color green`.
-256-color (`38;5;N`) and truecolor (`38;2;R;G;B`) are also supported;
-indices 16–255 and explicit RGB retain their standard/exact values.
-Backgrounds and other SGR styles are ignored; cursor-control escapes are rejected.
-ANSI codes do not count toward the 256-visible-character limit or scrolling width.
-ANSI characters are 6 pixels wide with a one-pixel gap; spaces reserve a full
-character cell. Measured on the device font, digits are 5 pixels, N is 7
-pixels, and M, W, and X are 8 pixels wide, so they get a matching advance.
-This layout fits seven characters
-before scrolling (eight for plain text).
-Empty text, or ANSI codes with no visible text, clears the screen.
+`GET/POST /text` is an alias for the text app. `POST /api/apps/text` requires a
+string `text` (up to 256 printable ASCII characters). Optional `color` accepts a
+case-insensitive name or `#RRGGBB`; it defaults to white. Optional `ansi`
+interprets foreground-color escapes. Invalid input returns 400; a disabled app
+returns 409; device failures return 502. Empty text, or ANSI with no visible
+characters, sends a black frame without deleting the DIY app.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8008/text -Method Post -ContentType application/json -Body '{"text":"HELLO WORLD","color":"blue"}'
+Text that fits stays centered. Longer messages scroll left. Static/blank frames
+refresh every five seconds while the server runs.
 
-# Clear the screen
-Invoke-RestMethod http://127.0.0.1:8008/text -Method Post -ContentType application/json -Body '{"text":""}'
+Named colors: white, red, orange, yellow, green, mint, teal, cyan, blue, purple,
+pink, peach. ANSI colors use [Catppuccin Mocha](https://github.com/catppuccin/palette).
 
-# Read current message and any display connection error
-Invoke-RestMethod http://127.0.0.1:8008/text
-```
+## Auth, proxy, device
 
-`POST /text` requires a string `text` (up to 256 printable ASCII characters).
-Optional `color` accepts a case-insensitive name or `#RRGGBB`; it defaults to
-white on every request. A 200 response confirms the clock accepted the first
-frame. Invalid input returns 400, wrong content type 415, oversized body 413,
-and device failures 502. The worker retries the latest message after device
-failures; GET /text reports its latest error. State is held in memory.
+If `TC002_TOKEN` is set, API, UI, and MCP require `Authorization: Bearer`.
+`GET /api/health` stays open. The CLI uses `--token` or `TC002_TOKEN`.
 
-Text that fits stays centered. Longer messages scroll continuously left,
-start visible at the left edge, then repeat with a 26-pixel gap between copies. New messages restart the scroll.
-Empty text sends an explicit black frame and stops the previous animation,
-without deleting the device app. Static/blank frames refresh every five seconds.
+Outbound HTTP uses `TC002_HTTP_PROXY` or `HTTP_PROXY`. Destinations on LAN
+(RFC1918, loopback, link-local, ULA), `localhost`, and `NO_PROXY` skip the
+proxy. Clock traffic is LAN, so it is never proxied.
 
-Use the clock's knob to select the `text` DIY/custom app. The first POST creates
-it automatically; POSTs do not automatically switch the visible app.
-Keep the server running to animate and receive updates. Ctrl+C stops it.
-Use `--port 8080` to change the port or `--host 0.0.0.0` to allow LAN clients.
-The API has no authentication; its default listener is local to this PC.
-`--tick 0.2` increases scroll speed. The server and text client use the `text` device app; the frame command uses
-`frame`.
+Device cache lives in `%LOCALAPPDATA%/ulanzi-tc002` on Windows, or
+`$XDG_CONFIG_HOME/ulanzi-tc002` on Unix. Docker uses `/data`. Override with
+`TC002_DATA_DIR`. Clock IP: `TC002_DEVICE_IP` or `tc002-server --device`.
 
-Named colors use softer RGB values:
-
-| Name | Hex |
+| Variable | Role |
 | --- | --- |
-| white | `#FFFFFF` |
-| red | `#F07178` |
-| orange | `#F2A65A` |
-| yellow | `#E8CF78` |
-| green | `#85C995` |
-| mint | `#8ED8BD` |
-| teal | `#70C5BF` |
-| cyan | `#87D3E8` |
-| blue | `#82AAE8` |
-| purple | `#B39DDB` |
-| pink | `#E8A0BF` |
-| peach | `#EFB49B` |
+| `TC002_HOST` / `TC002_PORT` | Server bind (default `127.0.0.1:8008`; Docker `0.0.0.0`) |
+| `TC002_SERVER_HOST` / `TC002_SERVER_PORT` | CLI target |
+| `TC002_TOKEN` | Optional bearer token |
+| `TC002_HTTP_PROXY` | Outbound proxy; LAN skipped |
+| `TC002_DEVICE_IP` / `TC002_DEVICE_MAC` / `TC002_DEVICE_NETWORK` | Clock identity |
+| `TC002_DATA_DIR` | Config and device cache |
+| `TC002_TICK` | Scroll interval in seconds |
 
-Other commands:
+## MCP
 
-```powershell
-uv run tc002.py status
-uv run tc002.py frame frame.json --watch 5
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "tc002": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8008/mcp",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:TC002_TOKEN}"
+      }
+    }
+  }
+}
 ```
 
-The frame command sends custom-app JSON using the app name `frame`.
+Tools: `list_apps`, `get_app`, `enable_app`, `disable_app`, `text_send`, `text_get`.
 
-The device address is cached in `%LOCALAPPDATA%/ulanzi-tc002/device.json` on
-Windows, or `$XDG_CONFIG_HOME/ulanzi-tc002/device.json` on Unix (default
-`~/.config/ulanzi-tc002/device.json`). Existing source-tree `device.local.json`
-settings are imported when no user cache exists. The cache is initially seeded
-with this clock's known IP (10.31.3.197), MAC, and LAN (10.31.3.0/24).
-Normal POSTs use the cached IP directly. Only connection failures or timeouts
-trigger discovery: probe /getBase on the cached LAN and match the clock's MAC.
-Retry the POST once at the discovered address, then save it for future runs.
-HTTP rejection responses do not trigger discovery. No periodic IP lookup runs.
-If the clock moves to another subnet, pass `--device NEW_IP`; after a successful
-POST that address and its /24 discovery network are saved. Discovery supports
-IPv4 networks of /24 or smaller, configurable in the cache file.
+## Docker image
+
+GitHub Actions publishes `ghcr.io/doitian/ulanzi-tc002` from `main` and `v*` tags.
 
 ```powershell
-uv run tc002.py text serve --device 10.31.3.197
+docker pull ghcr.io/doitian/ulanzi-tc002:latest
+docker run --rm -p 8008:8008 -e TC002_DEVICE_IP=10.31.3.197 -v tc002-data:/data ghcr.io/doitian/ulanzi-tc002:latest
+```
+
+```powershell
+uv sync --extra server
 uv run python -m unittest discover -s tests
 ```
+
+Install the CLI without server extras: `uv tool install .`
+Install with the server: `uv tool install ".[server]"`.
 
 Protocol references: [PixDeck core](https://github.com/cailurus/PixDeck/blob/main/pixbar_core.py)
 and [notice plugin](https://github.com/cailurus/PixDeck/blob/main/plugins/notice/plugin.py).

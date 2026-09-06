@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import Mock
-from ansi_text import parse_ansi, ansi_frames
-from text_server import TextWidget, blank_frame
-import tc002
+
+from ulanzi_tc002.ansi_text import ansi_frames, parse_ansi
+from ulanzi_tc002.frames import blank_frame, publish, scroll_frames
+from ulanzi_tc002.server.apps.text import TextWidget
 
 
 class AnsiTests(unittest.TestCase):
@@ -14,7 +15,7 @@ class AnsiTests(unittest.TestCase):
         glyphs = parse_ansi("A\x1b[31mB\x1b[0mC\x1b[34mD\x1b[39mE", "#85C995")
         self.assertEqual([color for _, color in glyphs],
                          ["#85C995", "#F38BA8", "#85C995", "#89B4FA", "#85C995"])
-        widget = TextWidget(Mock(), "text", 0.4, tc002.publish, tc002.scroll_frames)
+        widget = TextWidget(Mock(), "text", 0.4, publish, scroll_frames)
         widget.update({"text": "A\x1b[31mB\x1b[0mC", "color": "green", "ansi": True})
         self.assertEqual([color for _, color in widget.glyphs],
                          ["#85C995", "#F38BA8", "#85C995"])
@@ -39,7 +40,7 @@ class AnsiTests(unittest.TestCase):
         self.assertEqual(frame["text"][1]["x"] - frame["text"][0]["x"], 14)
 
     def test_spacing_changes_overflow_boundary(self):
-        widget = TextWidget(Mock(), "text", 0.4, tc002.publish, tc002.scroll_frames)
+        widget = TextWidget(Mock(), "text", 0.4, publish, scroll_frames)
         widget.update({"text": "123456789", "ansi": True})
         self.assertEqual(widget.rendered_width, 53)
         self.assertEqual(widget.device.post.call_args.args[2]["text"][0]["x"], 0)
@@ -62,7 +63,7 @@ class AnsiTests(unittest.TestCase):
                 parse_ansi(text, "#FFFFFF")
 
     def test_api_ansi_and_reset_only_clear(self):
-        widget = TextWidget(Mock(), "text", 0.4, tc002.publish, tc002.scroll_frames)
+        widget = TextWidget(Mock(), "text", 0.4, publish, scroll_frames)
         result = widget.update({"text": "\x1b[31mHI", "ansi": True})
         self.assertTrue(result["ansi"])
         self.assertEqual(widget.visible_length, 2)

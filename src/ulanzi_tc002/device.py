@@ -5,7 +5,8 @@ import json
 import os
 from pathlib import Path
 import urllib.error
-import urllib.request
+
+from ulanzi_tc002.http import request
 
 if os.name == "nt":
     CONFIG_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "ulanzi-tc002"
@@ -16,19 +17,16 @@ DEFAULT = {"ip": "10.31.3.197", "mac": "ccc4b277a363", "network": "10.31.3.0/24"
 
 
 def discover(config):
-    """Probe the last known LAN; accept only this clock's MAC address."""
     network = ipaddress.ip_network(config["network"], strict=False)
     if network.version != 4 or network.num_addresses > 256:
         raise ValueError("Discovery network must be IPv4 /24 or smaller")
 
     def probe(address):
         try:
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            with opener.open(f"http://{address}/getBase", timeout=0.8) as response:
-                data = json.load(response)
+            data = request(f"http://{address}/getBase", timeout=0.8)
             mac = str(data.get("mac", "")).lower().replace(":", "").replace("-", "")
             return str(address) if mac == config["mac"] else None
-        except (OSError, ValueError, AttributeError):
+        except (OSError, ValueError, AttributeError, TypeError):
             return None
 
     with ThreadPoolExecutor(max_workers=32) as pool:
@@ -39,15 +37,19 @@ def discover(config):
 
 
 class Device:
-    def __init__(self, address=None, cache=CACHE):
+    def __init__(self, address=None, cache=CACHE, mac=None, network=None):
         self.cache = cache
-        legacy = Path(__file__).with_name("device.local.json")
+        legacy = Path.cwd() / "device.local.json"
         source = cache if cache.exists() else legacy if cache == CACHE and legacy.exists() else None
         self.config = json.loads(source.read_text()) if source else dict(DEFAULT)
         self.dirty = not cache.exists() or (address is not None and address != self.config["ip"])
         if address:
             self.config["ip"] = str(ipaddress.IPv4Address(address))
             self.config["network"] = str(ipaddress.ip_network(f"{address}/24", strict=False))
+        if mac:
+            self.config["mac"] = mac
+        if network:
+            self.config["network"] = network
         self.address = self.config["ip"]
 
     def save(self):
@@ -61,7 +63,6 @@ class Device:
         try:
             result = sender(self.address, app, frame)
         except urllib.error.HTTPError:
-            # A reachable server rejected the request: no network discovery.
             raise
         except (urllib.error.URLError, ConnectionError, TimeoutError):
             print("Clock unreachable; looking for its MAC on the cached LAN.", flush=True)

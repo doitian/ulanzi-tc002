@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tc002</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>tc002</h1>
+    <section id="auth" hidden>
+      <label>Token <input id="token" type="password" autocomplete="off"></label>
+      <button id="save-token" type="button">Save</button>
+      <p id="auth-error" class="error"></p>
+    </section>
+    <section>
+      <h2>Apps</h2>
+      <div id="apps"></div>
+    </section>
+    <section id="text-panel">
+      <h2>Text</h2>
+      <p id="text-status"></p>
+      <form id="text-form">
+        <label>Message <input id="text" name="text" maxlength="256"></label>
+        <label>Color
+          <select id="color" name="color"></select>
+        </label>
+        <label><input id="ansi" type="checkbox"> ANSI</label>
+        <button type="submit">Send</button>
+      </form>
+      <p id="text-error" class="error"></p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

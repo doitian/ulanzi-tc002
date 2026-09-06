@@ -1,40 +1,38 @@
-import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
 
-from device import Device
-import tc002
+from ulanzi_tc002.client.cli import main
+from ulanzi_tc002.device import Device
+from ulanzi_tc002.frames import blank_frame, publish, scroll_frames
+from ulanzi_tc002.server.apps.text import TextWidget
 
 
 class WidgetTests(unittest.TestCase):
-    @patch("tc002.urllib.request.build_opener")
-    @patch("tc002.Device")
-    def test_send_uses_server_and_supports_empty_text(self, device, build_opener):
-        response = build_opener.return_value.open.return_value.__enter__.return_value
-        response.read.return_value = b'{"accepted": true}'
+    @patch("ulanzi_tc002.client.cli.request")
+    def test_send_uses_server_and_supports_empty_text(self, http_request):
+        http_request.return_value = {"accepted": True}
         for message in ["HELLO WORLD", ""]:
-            tc002.main(["text", "send", message, "--color", "blue"])
-            request = build_opener.return_value.open.call_args.args[0]
-            self.assertEqual(request.full_url, "http://127.0.0.1:8008/text")
-            self.assertEqual(json.loads(request.data), {"text": message, "color": "#82AAE8"})
-        device.assert_not_called()
+            main(["text", "send", message, "--color", "blue"])
+            self.assertEqual(http_request.call_args.args[0], "http://127.0.0.1:8008/api/apps/text")
+            self.assertEqual(http_request.call_args.kwargs["json_body"],
+                             {"text": message, "color": "#82AAE8"})
+            self.assertEqual(http_request.call_args.kwargs["method"], "POST")
 
     def test_marquee_starts_visible_and_repeats_with_half_screen_gap(self):
-        from ansi_text import marquee_offsets
+        from ulanzi_tc002.ansi_text import marquee_offsets
         for message in ["123456789", "HELLO WORLD"]:
-            frames = list(tc002.scroll_frames(message, "#112233"))
+            frames = list(scroll_frames(message, "#112233"))
             self.assertEqual(frames[0]["text"][0]["x"], 0)
             self.assertTrue(all(frame["text"] for frame in frames))
             offsets = list(marquee_offsets(len(message) * 6))
             self.assertTrue(all(b - (a + len(message) * 6) == 26 for a, b in offsets))
 
     def test_api_update_replaces_scroll_and_clear_keeps_app(self):
-        from text_server import TextWidget, blank_frame
         device = Mock()
-        widget = TextWidget(device, "text", 0.4, tc002.publish, tc002.scroll_frames)
+        widget = TextWidget(device, "text", 0.4, publish, scroll_frames)
         widget.update({"text": "HELLO WORLD", "color": "blue"})
         self.assertEqual(device.post.call_args.args[2]["text"][0]["x"], 0)
         self.assertEqual(widget.state[1], "#82AAE8")
@@ -47,9 +45,8 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(device.post.call_args.args[1], "text")
 
     def test_invalid_updates_leave_message_unchanged(self):
-        from text_server import TextWidget
         device = Mock()
-        widget = TextWidget(device, "text", 0.4, tc002.publish, tc002.scroll_frames)
+        widget = TextWidget(device, "text", 0.4, publish, scroll_frames)
         widget.update({"text": "HI"})
         for payload in [{}, {"text": 4}, {"text": "OK", "color": "bad"},
                         {"text": "X" * 257}, {"text": "non-ascii \u2603"}]:
@@ -60,12 +57,12 @@ class WidgetTests(unittest.TestCase):
 
     def test_fitting_text_stays_centered(self):
         for message in ["HI", "12345678"]:
-            frames = list(tc002.scroll_frames(message, "white"))
+            frames = list(scroll_frames(message, "white"))
             self.assertEqual(len(frames), 1)
             self.assertEqual(frames[0]["text"][0]["align"], "center")
             self.assertEqual(frames[0]["text"][0]["x"], -1000)
 
-    @patch("device.discover")
+    @patch("ulanzi_tc002.device.discover")
     def test_success_uses_cache_without_lookup(self, discover):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / "device.json"
@@ -74,7 +71,7 @@ class WidgetTests(unittest.TestCase):
             discover.assert_not_called()
             self.assertEqual(Device(cache=cache).address, "10.31.3.197")
 
-    @patch("device.discover", return_value="10.31.3.198")
+    @patch("ulanzi_tc002.device.discover", return_value="10.31.3.198")
     def test_network_failure_discovers_retries_and_persists(self, discover):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / "device.json"
@@ -85,7 +82,7 @@ class WidgetTests(unittest.TestCase):
             self.assertEqual(Device(cache=cache).address, "10.31.3.198")
             discover.assert_called_once()
 
-    @patch("device.discover")
+    @patch("ulanzi_tc002.device.discover")
     def test_http_error_does_not_discover(self, discover):
         with tempfile.TemporaryDirectory() as directory:
             client = Device(cache=Path(directory) / "device.json")

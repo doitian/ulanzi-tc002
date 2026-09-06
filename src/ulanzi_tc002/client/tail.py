@@ -16,7 +16,6 @@ class FileTail:
         self.pending = b""
 
     def poll(self):
-        """Return the latest new line, or None when no complete line arrived."""
         with self.path.open("rb") as stream:
             import os
             stat = os.fstat(stream.fileno())
@@ -26,7 +25,6 @@ class FileTail:
                 stream.seek(self.offset - len(self.anchor))
                 reset = stream.read(len(self.anchor)) != self.anchor
             if reset:
-                # Find the final line backwards, without loading the whole file.
                 end = stat.st_size
                 start, data = end, b""
                 while start > 0 and data.rstrip(b"\n").count(b"\n") < 1:
@@ -57,7 +55,6 @@ def follow_file(path):
         try:
             line = follower.poll()
         except FileNotFoundError:
-            # A writer may temporarily remove a file during rotation.
             line = None
         if line is not None:
             yield line

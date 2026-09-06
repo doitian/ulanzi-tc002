@@ -1,13 +1,7 @@
-"""HTTP-controlled text widget with a serialized display worker."""
-import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 
-
-def blank_frame():
-    # {} deletes the custom app. Explicit black pixels clear it without deletion.
-    return {"duration": 10, "text": [], "image": [],
-            "draw": [{"df": [0, 0, 52, 16, "#000000"]}]}
+from ulanzi_tc002.frames import blank_frame, publish, scroll_frames, text_frame
+from ulanzi_tc002.server.apps.base import App, AppDisabled
 
 
 class TextWidget:
@@ -27,13 +21,13 @@ class TextWidget:
 
     def cycle(self):
         if self.ansi:
-            from ansi_text import ansi_frames
+            from ulanzi_tc002.ansi_text import ansi_frames
             return iter(ansi_frames(self.glyphs))
         text, color = self.state
         return iter(self.frames(text, color)) if text else iter([blank_frame()])
 
     def update(self, payload):
-        from tc002 import resolve_color, text_frame
+        from ulanzi_tc002.colors import resolve_color
         if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
             raise ValueError("Provide a JSON object with a string 'text'")
         text = payload["text"]
@@ -48,14 +42,14 @@ class TextWidget:
             raise ValueError("Text cannot exceed 256 characters")
         glyphs = []
         if ansi:
-            from ansi_text import parse_ansi
+            from ulanzi_tc002.ansi_text import parse_ansi
             glyphs = parse_ansi(text, color)
         elif text:
             text_frame(text, color)
         with self.condition:
             self.ansi, self.glyphs = ansi, glyphs
             self.visible_length = len(glyphs) if ansi else len(text)
-            from ansi_text import text_width
+            from ulanzi_tc002.ansi_text import text_width
             self.rendered_width = text_width(glyphs) if ansi else len(text) * 6
             self.state = (text, color)
             self.revision += 1
@@ -101,64 +95,43 @@ class TextWidget:
             self.worker.join()
 
 
-def make_server(widget, host, port):
-    class Handler(BaseHTTPRequestHandler):
-        def setup(self):
-            super().setup()
-            self.connection.settimeout(10)
+class TextApp(App):
+    name = "text"
+    title = "Text"
 
-        def respond(self, status, payload):
-            body = json.dumps(payload).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+    def __init__(self, device, tick):
+        super().__init__()
+        self.device = device
+        self.tick = tick
+        self.widget = TextWidget(device, self.name, tick, publish, scroll_frames)
 
-        def do_POST(self):
-            if self.path != "/text":
-                self.respond(404, {"error": "Use POST /text"})
-                return
-            if self.headers.get_content_type() != "application/json":
-                self.respond(415, {"error": "Content-Type must be application/json"})
-                return
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 32768:
-                    self.respond(413, {"error": "JSON body must be 1..32768 bytes"})
-                    return
-                payload = json.loads(self.rfile.read(length))
-                result = widget.update(payload)
-            except (ValueError, UnicodeError) as error:
-                self.respond(400, {"error": str(error)})
-                return
-            except OSError as error:
-                self.respond(502, {"error": str(error), "accepted": False})
-                return
-            self.respond(200, result)
+    def start(self):
+        self.widget = TextWidget(self.device, self.name, self.tick, publish, scroll_frames)
+        self.widget.worker.start()
+        self.enabled = True
 
-        def do_GET(self):
-            if self.path != "/text":
-                self.respond(404, {"error": "Use GET /text"})
-                return
-            with widget.condition:
-                state = widget.state
-                self.respond(200, {"text": state[0] if state else None,
-                                   "color": state[1] if state else None,
-                                   "ansi": widget.ansi,
-                                   "app": widget.app, "error": widget.error})
+    def stop(self):
+        try:
+            self.device.post(publish, self.name, blank_frame())
+        except (OSError, ValueError, ConnectionError) as error:
+            print(f"Display clear failed: {error}", flush=True)
+        self.widget.close()
+        self.enabled = False
 
-    return ThreadingHTTPServer((host, port), Handler)
+    def update(self, payload):
+        if not self.enabled:
+            raise AppDisabled("App is disabled")
+        return self.widget.update(payload)
 
-
-def serve(device, app, host, port, tick, publish, frames):
-    widget = TextWidget(device, app, tick, publish, frames)
-    server = make_server(widget, host, port)
-    widget.worker.start()
-    print(f"Text API listening at http://{host}:{port}/text; "
-          f"select '{app}' in the clock's DIY/custom apps. Ctrl+C stops the server.", flush=True)
-    try:
-        server.serve_forever()
-    finally:
-        server.server_close()
-        widget.close()
+    def snapshot(self):
+        state = self.widget.state
+        return {
+            "name": self.name,
+            "title": self.title,
+            "enabled": self.enabled,
+            "text": state[0] if state else None,
+            "color": state[1] if state else None,
+            "ansi": self.widget.ansi,
+            "error": self.widget.error,
+            "app": self.name,
+        }
