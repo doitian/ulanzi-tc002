@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from ulanzi_tc002.client.badge import BLACK, HEIGHT, STATUS_COLOR, WIDTH, badge_image, compose, png_bytes
+from ulanzi_tc002.client.badge import BLACK, HEIGHT, OPENCODE_OUTER, STATUS_COLOR, WIDTH, badge_image, compose, png_bytes
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.opencode import plugin_path, plugin_source, summarize
@@ -56,6 +56,27 @@ class BadgeTests(unittest.TestCase):
         self.assertIn(BLACK, idle)
         self.assertTrue(png_bytes(pixels).startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertTrue(badge_image("ask", 2).startswith("data:image/png;base64,"))
+
+    def test_count_caps_at_nine_plus(self):
+        self.assertNotEqual(compose("ask", 9), compose("ask", 10))
+        self.assertEqual(compose("ask", 10), compose("ask", 11))
+
+    def test_icons_stay_put_when_count_changes(self):
+        def logo(pixels):
+            return tuple(
+                (x, y)
+                for y, row in enumerate(pixels)
+                for x, pixel in enumerate(row)
+                if pixel == OPENCODE_OUTER
+            )
+        none = logo(compose("ask", 0))
+        self.assertEqual(none, logo(compose("ask", 1)))
+        self.assertEqual(none, logo(compose("ask", 12)))
+
+    def test_status_is_vertically_centered(self):
+        for kind, color in STATUS_COLOR.items():
+            rows = [y for y, row in enumerate(compose(kind, 0)) if color in row]
+            self.assertLessEqual(abs(rows[0] - (HEIGHT - 1 - rows[-1])), 1, kind)
 
 
 class BridgeTests(unittest.TestCase):

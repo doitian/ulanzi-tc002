@@ -96,6 +96,7 @@ _DIGITS = {
     "7": ("#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."),
     "8": (".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."),
     "9": (".###.", "#...#", "#...#", ".####", "....#", "....#", ".###."),
+    "+": (".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."),
 }
 
 
@@ -126,25 +127,29 @@ def _blit(canvas, sprite, x0, y0):
                 canvas[dest_y][dest_x] = pixel
 
 
+def _vcenter(sprite):
+    rows = [i for i, row in enumerate(sprite) if any(pixel != BLACK for pixel in row)]
+    if not rows:
+        return 0
+    return (HEIGHT - (rows[-1] - rows[0] + 1)) // 2 - rows[0]
+
+
 def compose(kind, count, provider="opencode"):
     color = STATUS_COLOR[kind]
-    digits = [_paint(_DIGITS[ch], color) for ch in str(count)] if count else []
-    digit_w = 5 * len(digits) + max(0, len(digits) - 1) if digits else 0
+    text = "9+" if count > 9 else str(count) if count else ""
+    digits = [_paint(_DIGITS[ch], color) for ch in text]
     gap = 2
-    width = ICON + gap + ICON if not digits else ICON + gap + digit_w + gap + ICON
-    if width > WIDTH:
-        gap = 1
-        width = ICON + gap + ICON if not digits else ICON + gap + digit_w + gap + ICON
+    width = ICON + gap + ICON + gap + 11
     x = max(0, (WIDTH - width) // 2)
     canvas = [[BLACK] * WIDTH for _ in range(HEIGHT)]
     _blit(canvas, OPENCODE, x, 0)
     x += ICON + gap
+    _blit(canvas, STATUSES[kind], x, _vcenter(STATUSES[kind]))
     if digits:
+        x += ICON + gap
         y = (HEIGHT - 7) // 2
         for index, digit in enumerate(digits):
             _blit(canvas, digit, x + index * 6, y)
-        x += digit_w + gap
-    _blit(canvas, STATUSES[kind], x, 0)
     return canvas
 
 
