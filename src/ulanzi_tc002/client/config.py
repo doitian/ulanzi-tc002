@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import subprocess
 import tomllib
 from urllib.parse import urlparse, urlunparse
 
@@ -34,7 +35,32 @@ def load_client_config(path=None):
         if not isinstance(token, str):
             raise ValueError("Client config 'token' must be a string")
         config["token"] = token
+    token_gopass = section.get("token_gopass")
+    if token_gopass is not None:
+        if not isinstance(token_gopass, str) or not token_gopass.strip():
+            raise ValueError("Client config 'token_gopass' must be a non-empty string")
+        config["token_gopass"] = token_gopass.strip()
     return config
+
+
+def token_from_gopass(entry):
+    try:
+        result = subprocess.run(
+            ["gopass", "show", "--password", entry],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        raise ValueError("gopass is not installed") from None
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip()
+        message = f"gopass failed for {entry!r}"
+        raise ValueError(f"{message}: {detail}" if detail else message) from error
+    token = result.stdout.rstrip("\r\n")
+    if not token:
+        raise ValueError(f"gopass entry {entry!r} is empty")
+    return token
 
 
 def _first(*values):
@@ -64,4 +90,6 @@ def resolve_endpoint(url=None, host=None, port=None, token=None, config=None, en
     base = urlunparse((parsed.scheme, netloc, (parsed.path or "").rstrip("/"), "", "", ""))
     if token is None:
         token = environ["TC002_TOKEN"] if "TC002_TOKEN" in environ else config.get("token")
+    if not token and config.get("token_gopass"):
+        token = token_from_gopass(config["token_gopass"])
     return {"url": base, "token": token or None, "host": host, "port": port}

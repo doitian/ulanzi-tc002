@@ -84,13 +84,15 @@ The CLI reads `~/.config/ulanzi-tc002/config.toml` (`$XDG_CONFIG_HOME` if set):
 ```toml
 url = "http://127.0.0.1:8008"
 token = "optional"
+token_gopass = "optional/gopass/entry"
 ```
 
-`[server] url` / `token` work too. `--url`, `--host`, `--port`, `--token` and
+`[server] url` / `token` / `token_gopass` work too. `--url`, `--host`, `--port`, `--token` and
 `TC002_SERVER_URL` override the file. `--host` / `--port` change parts of the URL.
+`token_gopass` reads the password with `gopass show --password`.
 
 If `TC002_TOKEN` is set, API, UI, and MCP require `Authorization: Bearer`.
-`GET /api/health` stays open. The CLI uses `--token`, the config file, or `TC002_TOKEN`.
+`GET /api/health` stays open. The CLI uses `--token`, the config file, `token_gopass`, or `TC002_TOKEN`.
 
 Outbound HTTP uses `TC002_HTTP_PROXY` or `HTTP_PROXY`. Destinations on LAN
 (RFC1918, loopback, link-local, ULA), `localhost`, and `NO_PROXY` skip the

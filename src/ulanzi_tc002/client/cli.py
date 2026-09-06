@@ -80,7 +80,7 @@ def build_parser():
     parser.add_argument("--url", help="Server URL (default: config.toml or http://127.0.0.1:8008)")
     parser.add_argument("--host", help="Override server host")
     parser.add_argument("--port", type=int, help="Override server port")
-    parser.add_argument("--token", help="Bearer token; defaults to config or TC002_TOKEN")
+    parser.add_argument("--token", help="Bearer token; defaults to config, gopass, or TC002_TOKEN")
     commands = parser.add_subparsers(dest="command", required=True)
 
     text = commands.add_parser("text", help="Text app client")

@@ -1,8 +1,10 @@
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from ulanzi_tc002.client.config import load_client_config, resolve_endpoint
+from ulanzi_tc002.client.config import load_client_config, resolve_endpoint, token_from_gopass
 
 
 class ClientConfigTests(unittest.TestCase):
@@ -57,3 +59,51 @@ class ClientConfigTests(unittest.TestCase):
     def test_invalid_url(self):
         with self.assertRaises(ValueError):
             resolve_endpoint(url="not-a-url", config={}, environ={})
+
+    def test_reads_token_gopass(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.toml"
+            path.write_text('token_gopass = " infra/tc002 "\n', encoding="utf-8")
+            self.assertEqual(load_client_config(path), {"token_gopass": "infra/tc002"})
+
+    def test_token_gopass_must_be_nonempty_string(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.toml"
+            path.write_text("token_gopass = \"\"\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_client_config(path)
+
+    def test_token_from_gopass(self):
+        completed = subprocess.CompletedProcess(
+            ["gopass", "show", "--password", "infra/tc002"], 0, stdout="secret\n", stderr="")
+        with patch("ulanzi_tc002.client.config.subprocess.run", return_value=completed) as run:
+            self.assertEqual(token_from_gopass("infra/tc002"), "secret")
+        run.assert_called_once_with(
+            ["gopass", "show", "--password", "infra/tc002"],
+            check=True, capture_output=True, text=True)
+
+    def test_token_from_gopass_missing_and_empty(self):
+        with patch("ulanzi_tc002.client.config.subprocess.run", side_effect=FileNotFoundError):
+            with self.assertRaises(ValueError):
+                token_from_gopass("infra/tc002")
+        completed = subprocess.CompletedProcess(
+            ["gopass", "show", "--password", "infra/tc002"], 0, stdout="\n", stderr="")
+        with patch("ulanzi_tc002.client.config.subprocess.run", return_value=completed):
+            with self.assertRaises(ValueError):
+                token_from_gopass("infra/tc002")
+
+    def test_token_from_gopass_when_no_other_token(self):
+        with patch("ulanzi_tc002.client.config.token_from_gopass", return_value="from-gopass") as gopass:
+            endpoint = resolve_endpoint(config={"token_gopass": "infra/tc002"}, environ={})
+        self.assertEqual(endpoint["token"], "from-gopass")
+        gopass.assert_called_once_with("infra/tc002")
+
+    def test_gopass_not_used_when_token_present(self):
+        config = {"token": "from-config", "token_gopass": "infra/tc002"}
+        with patch("ulanzi_tc002.client.config.token_from_gopass") as gopass:
+            self.assertEqual(resolve_endpoint(config=config, environ={})["token"], "from-config")
+            self.assertEqual(
+                resolve_endpoint(config=config, environ={"TC002_TOKEN": "from-env"})["token"],
+                "from-env")
+            self.assertEqual(resolve_endpoint(token="cli", config=config, environ={})["token"], "cli")
+        gopass.assert_not_called()
