@@ -20,6 +20,17 @@ class DeviceDiscoveryTests(unittest.TestCase):
         networks = discovery_networks({"mac": "ccc4b277a363"})
         self.assertEqual(networks, [ipaddress.ip_network("10.1.2.0/24")])
 
+    @patch("ulanzi_tc002.device.local_ipv4s", return_value={"10.1.2.3", "172.17.0.2"})
+    def test_skips_docker_bridge_when_lan_exists(self, _local_ipv4s):
+        networks = discovery_networks({"mac": "ccc4b277a363"})
+        self.assertEqual(networks, [ipaddress.ip_network("10.1.2.0/24")])
+
+    @patch("ulanzi_tc002.device.local_ipv4s", return_value={"172.17.0.2", "172.18.0.2"})
+    def test_docker_only_nets_explain_host_networking(self, _local_ipv4s):
+        with self.assertRaises(ConnectionError) as error:
+            discovery_networks({"mac": "ccc4b277a363"})
+        self.assertIn("host networking", str(error.exception))
+
     @patch("ulanzi_tc002.device.local_networks", return_value=[])
     def test_no_lan_explains_how_to_set_network(self, _local):
         with self.assertRaises(ConnectionError) as error:

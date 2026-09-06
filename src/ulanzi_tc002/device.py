@@ -15,10 +15,36 @@ else:
     CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "ulanzi-tc002"
 CACHE = CONFIG_DIR / "device.json"
 DEFAULT_MAC = "ccc4b277a363"
+CONTAINER_NETS = (
+    ipaddress.ip_network("172.17.0.0/16"),
+    ipaddress.ip_network("172.18.0.0/16"),
+)
+
+
+def interface_ipv4s():
+    addresses = set()
+    if not hasattr(socket, "if_nameindex"):
+        return addresses
+    try:
+        import fcntl
+        import struct
+    except ImportError:
+        return addresses
+    for _, name in socket.if_nameindex():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            raw = fcntl.ioctl(
+                sock, 0x8915, struct.pack("256s", name.encode("ascii", "replace")[:15]))
+            addresses.add(socket.inet_ntoa(raw[20:24]))
+        except OSError:
+            pass
+        finally:
+            sock.close()
+    return addresses
 
 
 def local_ipv4s():
-    addresses = set()
+    addresses = interface_ipv4s()
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -48,6 +74,10 @@ def local_networks():
     return networks
 
 
+def _container_network(network):
+    return any(network.subnet_of(block) for block in CONTAINER_NETS)
+
+
 def discovery_networks(config):
     specified = config.get("network")
     if specified:
@@ -56,9 +86,14 @@ def discovery_networks(config):
             raise ValueError("Discovery network must be IPv4 /24 or smaller")
         return [network]
     networks = local_networks()
-    if not networks:
-        raise ConnectionError("No LAN to scan; set TC002_DEVICE_IP or TC002_DEVICE_NETWORK")
-    return networks
+    lan = [network for network in networks if not _container_network(network)]
+    if lan:
+        return lan
+    if networks:
+        raise ConnectionError(
+            "Clock LAN is not visible from this container; "
+            "run with host networking or set TC002_DEVICE_IP or TC002_DEVICE_NETWORK")
+    raise ConnectionError("No LAN to scan; set TC002_DEVICE_IP or TC002_DEVICE_NETWORK")
 
 
 def probe_network(network, mac):

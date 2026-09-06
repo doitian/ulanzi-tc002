@@ -80,8 +80,9 @@ proxy. Clock traffic is LAN, so it is never proxied.
 Device cache lives in `%LOCALAPPDATA%/ulanzi-tc002` on Windows, or
 `$XDG_CONFIG_HOME/ulanzi-tc002` on Unix. Docker uses `/data`. Override with
 `TC002_DATA_DIR`. If `device.json` is missing and `TC002_DEVICE_IP` is unset,
-the server scans local `/24`s for the clock MAC. Set `TC002_DEVICE_NETWORK` when
-the clock is not on those interfaces.
+the server scans local `/24`s for the clock MAC. Docker bridge networks are
+skipped; run with host networking so the scan sees the LAN, or set
+`TC002_DEVICE_IP` / `TC002_DEVICE_NETWORK`.
 
 | Variable | Role |
 | --- | --- |
@@ -123,7 +124,7 @@ GitHub Actions publishes `ghcr.io/doitian/ulanzi-tc002` from `main` and `v*` tag
 
 ```powershell
 docker pull ghcr.io/doitian/ulanzi-tc002:latest
-docker run --rm -p 8008:8008 -v tc002-data:/data ghcr.io/doitian/ulanzi-tc002:latest
+docker run --rm --network host -v tc002-data:/data ghcr.io/doitian/ulanzi-tc002:latest
 ```
 
 ```powershell

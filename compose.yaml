@@ -4,7 +4,8 @@ services:
     build: .
     ports:
       - "8008:8008"
-    # TC002_DEVICE_IP / TC002_DEVICE_NETWORK if LAN scan cannot see the clock
+    environment:
+      TC002_DEVICE_IP: "10.31.3.197"
     volumes:
       - tc002-data:/data
 
