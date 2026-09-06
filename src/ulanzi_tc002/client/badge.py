@@ -7,6 +7,8 @@ WIDTH, HEIGHT, ICON = 52, 16, 16
 BLACK = (0, 0, 0)
 OPENCODE_OUTER = (183, 177, 177)
 OPENCODE_INNER = (75, 70, 70)
+CLAUDE_OUTER = (217, 119, 87)
+CLAUDE_INNER = (140, 62, 41)
 STATUS_COLOR = {
     "ask": (242, 166, 90),
     "run": (232, 207, 120),
@@ -30,6 +32,24 @@ _OPENCODE = (
     "################",
     "################",
     "################",
+)
+_CLAUDE = (
+    "................",
+    "................",
+    "................",
+    ".##############.",
+    ".##############.",
+    ".##.########.##.",
+    ".##.########.##.",
+    "################",
+    "################",
+    ".##############.",
+    ".##############.",
+    "..##.##..##.##..",
+    "..##.##..##.##..",
+    "................",
+    "................",
+    "................",
 )
 _ASK = (
     "................",
@@ -109,6 +129,8 @@ def _paint(rows, color):
 
 
 OPENCODE = _sprite(_OPENCODE, {"#": OPENCODE_OUTER, "+": OPENCODE_INNER, ".": BLACK})
+CLAUDE = _sprite(_CLAUDE, {"#": CLAUDE_OUTER, "+": CLAUDE_INNER, ".": BLACK})
+LOGOS = {"opencode": OPENCODE, "claude": CLAUDE}
 STATUSES = {
     "ask": _paint(_ASK, STATUS_COLOR["ask"]),
     "run": _paint(_RUN, STATUS_COLOR["run"]),
@@ -134,6 +156,13 @@ def _vcenter(sprite):
     return (HEIGHT - (rows[-1] - rows[0] + 1)) // 2 - rows[0]
 
 
+def _hcenter(sprite, box=ICON):
+    cols = [i for i in range(len(sprite[0])) if any(row[i] != BLACK for row in sprite)]
+    if not cols:
+        return 0
+    return (box - (cols[-1] - cols[0] + 1)) // 2 - cols[0]
+
+
 def compose(kind, count, provider="opencode"):
     color = STATUS_COLOR[kind]
     text = "9+" if count > 9 else str(count) if count else ""
@@ -142,7 +171,8 @@ def compose(kind, count, provider="opencode"):
     width = ICON + gap + ICON + gap + 11
     x = max(0, (WIDTH - width) // 2)
     canvas = [[BLACK] * WIDTH for _ in range(HEIGHT)]
-    _blit(canvas, OPENCODE, x, 0)
+    logo = LOGOS.get(provider, OPENCODE)
+    _blit(canvas, logo, x + _hcenter(logo), _vcenter(logo))
     x += ICON + gap
     _blit(canvas, STATUSES[kind], x, _vcenter(STATUSES[kind]))
     if digits:

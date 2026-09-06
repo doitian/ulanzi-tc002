@@ -40,33 +40,21 @@ id, and `blocking` as the unique session ids in `pending`.
 
 `retry` is treated as running in both the plugin and `summarize()`.
 
-### Background sessions
+### Idle chats
 
-`/new` only goes home; `/sessions` only switches the focused chat. The old
-session is not deleted. If it is still running, or later asks for input, it
-stays in the report:
-
-- Running and pending sessions are never pruned.
-- Permission/question `asked`/`updated` adds the session to `pending` even
-  when that chat is not focused.
-- `replied`/`rejected` clears that request. The session stays in `seen`.
-
-### Idle pruning
-
-Idle chats from `/new` and `/sessions` must not stack. The plugin drops idle
-sessions that are not the one being kept, not running, and not pending when:
+Shared rules: [idle-chats.md](idle-chats.md). The plugin prunes idle sessions
+in this process when:
 
 - a top-level session is created (`session.created` without `parentID`)
 - the TUI selects a session (`tui.session.select`)
 - `/new` runs (`tui.command.execute` with `session.new`)
 - a top-level session already in `seen` goes idle
 
-Child sessions are dropped as soon as they go idle. They count while they
-run or ask; they do not become the idle representative. `session.deleted`
-drops the id everywhere.
-
-After pruning, at most one idle top-level session remains, plus every
-background session that is still running or asking.
+`/new` only goes home; `/sessions` only switches the focused chat.
+Permission/question `asked`/`updated` adds the session to `pending` even when
+that chat is not focused. `replied`/`rejected` clears that request. The
+session stays in `seen`. Child sessions are `session.created` with
+`parentID`. `session.deleted` drops the id everywhere.
 
 ## Bridge merge
 

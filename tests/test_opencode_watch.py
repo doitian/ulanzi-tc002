@@ -130,8 +130,10 @@ class BridgeTests(unittest.TestCase):
 class WatchCliTests(unittest.TestCase):
     def test_parse_providers(self):
         self.assertEqual(parse_providers("opencode,opencode"), ["opencode"])
+        self.assertEqual(parse_providers("claude"), ["claude"])
+        self.assertEqual(parse_providers("opencode,claude"), ["opencode", "claude"])
         with self.assertRaises(ValueError):
-            parse_providers("claude")
+            parse_providers("nope")
 
     @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
     @patch("ulanzi_tc002.client.cli.request")

@@ -1,10 +1,12 @@
+import threading
 import time
 
 from ulanzi_tc002.client.badge import badge_image
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
+from ulanzi_tc002.client.claude import install_hooks, list_agents, remove_hooks
 from ulanzi_tc002.client.opencode import install_plugin, remove_plugin
 
-KNOWN_PROVIDERS = ("opencode",)
+KNOWN_PROVIDERS = ("opencode", "claude")
 
 
 def parse_providers(value):
@@ -44,14 +46,44 @@ def send_badge(api, args, name, kind, count, counts):
 class OpencodeProvider:
     name = "opencode"
 
-    def setup(self, bridge_url):
+    def setup(self, bridge_url, store=None):
         install_plugin(bridge_url)
 
     def teardown(self):
         remove_plugin()
 
 
-PROVIDERS = {OpencodeProvider.name: OpencodeProvider}
+class ClaudeProvider:
+    name = "claude"
+
+    def setup(self, bridge_url, store=None):
+        self.store = store
+        self.stop = threading.Event()
+        install_hooks(bridge_url)
+        if store is not None:
+            rows = list_agents()
+            if rows is not None:
+                store.merge_agents(self.name, rows)
+        self.thread = threading.Thread(target=self._poll, daemon=True)
+        self.thread.start()
+
+    def _poll(self):
+        while not self.stop.wait(1):
+            rows = list_agents()
+            if rows is None or self.store is None:
+                continue
+            self.store.merge_agents(self.name, rows)
+
+    def teardown(self):
+        self.stop.set()
+        self.thread.join(timeout=2)
+        remove_hooks()
+
+
+PROVIDERS = {
+    OpencodeProvider.name: OpencodeProvider,
+    ClaudeProvider.name: ClaudeProvider,
+}
 
 
 def watch_agents(args, api):
@@ -65,7 +97,7 @@ def watch_agents(args, api):
         for provider in providers:
             ensure_app(api, args, provider.name)
             created.append(provider.name)
-            provider.setup(bridge.url)
+            provider.setup(bridge.url, store)
             started.append(provider)
         last = None
         while True:

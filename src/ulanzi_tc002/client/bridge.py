@@ -3,6 +3,7 @@ import json
 import threading
 import time
 
+from ulanzi_tc002.client.claude import apply_agents, apply_hook, reports
 from ulanzi_tc002.client.opencode import summarize
 
 STALE_SECONDS = 5
@@ -11,14 +12,22 @@ DEFAULT_PORT = 8009
 
 
 class BridgeStore:
-    def __init__(self, stale=STALE_SECONDS):
+    def __init__(self, stale=STALE_SECONDS, desktop_ids=None):
         self.stale = stale
+        self.desktop_ids = desktop_ids
         self.lock = threading.Lock()
         self.instances = {}
+        self.hooks = {}
 
     def update(self, provider, payload):
         if not isinstance(payload, dict):
             raise ValueError("Provide a JSON object")
+        if payload.get("hook_event_name"):
+            with self.lock:
+                bucket = self.hooks.setdefault(provider, {})
+                apply_hook(bucket, payload, self.desktop_ids)
+                self._flush_hooks(provider, time.time())
+            return
         instance = payload.get("id")
         if not isinstance(instance, str) or not instance:
             raise ValueError("Provide a string id")
@@ -40,11 +49,34 @@ class BridgeStore:
                 "updated": time.time(),
             }
 
+    def merge_agents(self, provider, rows):
+        with self.lock:
+            bucket = self.hooks.setdefault(provider, {})
+            apply_agents(bucket, rows)
+            self._flush_hooks(provider, time.time())
+
+    def _flush_hooks(self, provider, now):
+        live = set()
+        for report in reports(self.hooks.get(provider, {})):
+            live.add(report["id"])
+            self.instances[(provider, report["id"])] = {
+                "status": report["status"],
+                "blocking": list(report["blocking"]),
+                "updated": now,
+            }
+        for key in [
+            key for key in self.instances
+            if key[0] == provider and key[1] in ("desktop", "cli") and key[1] not in live
+        ]:
+            del self.instances[key]
+
     def snapshot(self, provider, now=None):
         now = time.time() if now is None else now
         status_by_id = {}
         blocking = set()
         with self.lock:
+            if provider in self.hooks:
+                self._flush_hooks(provider, now)
             stale = [
                 key for key, item in self.instances.items()
                 if key[0] == provider and now - item["updated"] > self.stale
