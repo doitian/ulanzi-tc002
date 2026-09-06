@@ -11,7 +11,7 @@ from ulanzi_tc002.server.mcp import mcp_asgi_app
 from ulanzi_tc002.server.registry import AppExists, Registry
 
 UI = Path(__file__).parent / "ui"
-PUBLIC_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/app.js", "/style.css")
+PUBLIC_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/app.js", "/style.css", "/favicon")
 PUBLIC_PATHS = {"/", "/api/health"}
 
 
@@ -162,6 +162,11 @@ def create_app(settings=None, device=None):
     @app.get("/style.css")
     def app_css():
         return ui_file("style.css", "text/css")
+
+    @app.get("/favicon.ico")
+    @app.get("/favicon.svg")
+    def favicon():
+        return ui_file("favicon.svg", "image/svg+xml")
 
     return app
 
