@@ -1,4 +1,7 @@
 FROM python:3.13-slim AS build
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gcc libffi-dev \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY pyproject.toml README.md ./
 COPY src ./src
