@@ -1,7 +1,7 @@
 FROM python:3.13-slim AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-        build-essential libffi-dev zlib1g-dev libpng-dev \
+        build-essential libffi-dev zlib1g-dev libpng-dev libjpeg-dev \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY pyproject.toml README.md ./
@@ -16,7 +16,7 @@ RUN /venv/bin/pip install --no-cache-dir --no-deps --force-reinstall . \
 
 FROM python:3.13-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libpng16-16t64 \
+ && apt-get install -y --no-install-recommends libpng16-16t64 libjpeg62-turbo \
  && rm -rf /var/lib/apt/lists/*
 ENV PATH=/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
