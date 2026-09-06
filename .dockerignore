@@ -1,4 +1,5 @@
 .git
+.github
 .venv
 .uv-cache
 __pycache__
@@ -7,4 +8,8 @@ dist
 build
 tests
 reference
+compose.yaml
+.gitignore
+mise.toml
+uv.lock
 *.local.json

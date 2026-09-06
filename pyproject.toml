@@ -9,7 +9,7 @@ dependencies = []
 [project.optional-dependencies]
 server = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
+    "uvicorn>=0.32",
     "mcp>=2",
 ]
 
