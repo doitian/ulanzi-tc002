@@ -118,7 +118,8 @@ Tools: `list_apps`, `get_app`, `enable_app`, `disable_app`, `text_send`, `text_g
 
 ## Docker image
 
-GitHub Actions publishes `ghcr.io/doitian/ulanzi-tc002` from `main` and `v*` tags.
+GitHub Actions publishes `ghcr.io/doitian/ulanzi-tc002` from `main` and `v*` tags
+(`linux/amd64`, `linux/arm64`, and `linux/arm/v7`).
 
 ```powershell
 docker pull ghcr.io/doitian/ulanzi-tc002:latest
