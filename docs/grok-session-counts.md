@@ -24,8 +24,10 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
 4. `snapshot("grok")` merges that record, then `summarize()` picks the
    badge kind and the displayed count.
 
-Restart `tc002 watch agents` after changing hooks. Reload hooks in an
-already-open Grok session (`/hooks`, then `r`) or start a new session.
+Restart `tc002 watch agents` after changing hooks. If watch did not exit
+cleanly, run `tc002 watch agents --teardown` to remove leftover hooks.
+Reload hooks in an already-open Grok session (`/hooks`, then `r`) or
+start a new session.
 
 ## What the hooks report
 

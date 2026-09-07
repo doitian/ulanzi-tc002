@@ -26,9 +26,10 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
 5. `snapshot("codex")` merges those records, then `summarize()` picks the
    badge kind and the displayed count.
 
-Restart `tc002 watch agents` after changing hooks. Codex may ask you to
-trust the new hook in `/hooks` before it will run. Already-open Codex
-sessions pick up the hooks on their next event.
+Restart `tc002 watch agents` after changing hooks. If watch did not exit
+cleanly, run `tc002 watch agents --teardown` to remove leftover hooks.
+Codex may ask you to trust the new hook in `/hooks` before it will run.
+Already-open Codex sessions pick up the hooks on their next event.
 
 ## What the hooks report
 

@@ -22,6 +22,8 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
    the badge kind and the displayed count.
 
 Restart both `tc002 watch agents` and OpenCode after changing the plugin.
+If watch did not exit cleanly, run `tc002 watch agents --teardown` to
+remove leftover plugins and hooks.
 
 ## What the plugin reports
 

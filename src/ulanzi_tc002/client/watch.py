@@ -1,3 +1,4 @@
+import signal
 import threading
 import time
 
@@ -52,6 +53,10 @@ class OpencodeProvider:
         install_plugin(bridge_url)
 
     def teardown(self):
+        self.cleanup()
+
+    @staticmethod
+    def cleanup():
         remove_plugin()
 
 
@@ -79,6 +84,10 @@ class ClaudeProvider:
     def teardown(self):
         self.stop.set()
         self.thread.join(timeout=2)
+        self.cleanup()
+
+    @staticmethod
+    def cleanup():
         remove_hooks()
 
 
@@ -89,6 +98,10 @@ class CodexProvider:
         install_codex_hooks(bridge_url)
 
     def teardown(self):
+        self.cleanup()
+
+    @staticmethod
+    def cleanup():
         remove_codex_hooks()
 
 
@@ -113,6 +126,10 @@ class GrokProvider:
     def teardown(self):
         self.stop.set()
         self.thread.join(timeout=2)
+        self.cleanup()
+
+    @staticmethod
+    def cleanup():
         remove_grok_hooks()
 
 
@@ -124,12 +141,40 @@ PROVIDERS = {
 }
 
 
+def teardown_configs(names):
+    for name in names:
+        PROVIDERS[name].cleanup()
+
+
+def _raise_shutdown(signum, frame):
+    raise SystemExit(0)
+
+
+def _bind_shutdown():
+    previous = {}
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            previous[sig] = signal.signal(sig, _raise_shutdown)
+        except (ValueError, OSError):
+            pass
+    return previous
+
+
+def _unbind_shutdown(previous):
+    for sig, handler in previous.items():
+        try:
+            signal.signal(sig, handler)
+        except (ValueError, OSError):
+            pass
+
+
 def watch_agents(args, api):
     providers = [PROVIDERS[name]() for name in args.providers]
     store = BridgeStore()
     bridge = Bridge(args.bridge_host, args.bridge_port, store, args.providers)
     created = []
     started = []
+    previous = _bind_shutdown()
     try:
         bridge.start()
         for provider in providers:
@@ -154,3 +199,4 @@ def watch_agents(args, api):
         for name in reversed(created):
             delete_app(api, args, name)
         bridge.stop()
+        _unbind_shutdown(previous)

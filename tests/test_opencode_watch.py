@@ -1,16 +1,21 @@
 import io
 import json
 import os
+import signal
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from ulanzi_tc002.client.badge import BLACK, HEIGHT, OPENCODE_OUTER, STATUS_COLOR, WIDTH, badge_image, compose, png_bytes
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
+from ulanzi_tc002.client.claude import install_hooks as install_claude_hooks, settings_path
 from ulanzi_tc002.client.cli import main
-from ulanzi_tc002.client.opencode import plugin_path, plugin_source, summarize
+from ulanzi_tc002.client.codex import hooks_path as codex_hooks_path, install_hooks as install_codex_hooks, script_path as codex_script_path
+from ulanzi_tc002.client.grok import hooks_path as grok_hooks_path, install_hooks as install_grok_hooks, script_path as grok_script_path
+from ulanzi_tc002.client.opencode import install_plugin, plugin_path, plugin_source, summarize
 from ulanzi_tc002.client.watch import parse_providers
 
 
@@ -183,6 +188,82 @@ class WatchCliTests(unittest.TestCase):
         source = plugin_source("http://127.0.0.1:8010")
         self.assertIn("http://127.0.0.1:8010", source)
         self.assertNotIn("http://127.0.0.1:8009", source)
+
+    def test_providers_required_without_teardown(self):
+        with self.assertRaises(SystemExit):
+            main(["watch", "agents"])
+
+    @patch("ulanzi_tc002.client.cli.request")
+    def test_teardown_removes_all_provider_configs(self, cli_request):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environ = {
+                **os.environ,
+                "XDG_CONFIG_HOME": str(root / "xdg"),
+                "CLAUDE_CONFIG_DIR": str(root / "claude"),
+                "CODEX_HOME": str(root / "codex"),
+                "GROK_HOME": str(root / "grok"),
+            }
+            install_plugin("http://127.0.0.1:8009", environ)
+            install_claude_hooks("http://127.0.0.1:8009", environ)
+            install_codex_hooks("http://127.0.0.1:8009", environ)
+            install_grok_hooks("http://127.0.0.1:8009", environ)
+            self.assertTrue(plugin_path(environ).exists())
+            self.assertTrue(settings_path(environ).exists())
+            self.assertTrue(codex_hooks_path(environ).exists())
+            self.assertTrue(codex_script_path(environ).exists())
+            self.assertTrue(grok_hooks_path(environ).exists())
+            self.assertTrue(grok_script_path(environ).exists())
+            with patch.dict(os.environ, environ, clear=True):
+                main(["watch", "agents", "--teardown"])
+            self.assertFalse(plugin_path(environ).exists())
+            self.assertFalse(settings_path(environ).exists())
+            self.assertFalse(codex_hooks_path(environ).exists())
+            self.assertFalse(codex_script_path(environ).exists())
+            self.assertFalse(grok_hooks_path(environ).exists())
+            self.assertFalse(grok_script_path(environ).exists())
+            self.assertFalse(cli_request.called)
+
+    @patch("ulanzi_tc002.client.cli.request")
+    def test_teardown_respects_providers(self, cli_request):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environ = {
+                **os.environ,
+                "XDG_CONFIG_HOME": str(root / "xdg"),
+                "CLAUDE_CONFIG_DIR": str(root / "claude"),
+            }
+            install_plugin("http://127.0.0.1:8009", environ)
+            install_claude_hooks("http://127.0.0.1:8009", environ)
+            with patch.dict(os.environ, environ, clear=True):
+                main(["watch", "agents", "--providers", "claude", "--teardown"])
+            self.assertTrue(plugin_path(environ).exists())
+            self.assertFalse(settings_path(environ).exists())
+            self.assertFalse(cli_request.called)
+
+    @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
+    @patch("ulanzi_tc002.client.cli.request")
+    def test_sigterm_tears_down_plugin(self, cli_request, _config):
+        cli_request.return_value = {"accepted": True, "name": "opencode", "deleted": True}
+        handlers = {}
+
+        def bind(sig, handler):
+            handlers[sig] = handler
+            return signal.SIG_DFL
+
+        def trip(_interval):
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            environ = {**os.environ, "XDG_CONFIG_HOME": tmp}
+            with patch.dict(os.environ, environ, clear=True):
+                with patch("ulanzi_tc002.client.watch.signal.signal", bind):
+                    with patch("ulanzi_tc002.client.watch.time.sleep", trip):
+                        with self.assertRaises(SystemExit) as ctx:
+                            main(["watch", "agents", "--providers", "opencode", "--bridge-port", "0"])
+            self.assertEqual(ctx.exception.code, 0)
+            self.assertFalse(plugin_path(environ).exists())
+            self.assertEqual(cli_request.call_args_list[-1].kwargs["method"], "DELETE")
 
 
 if __name__ == "__main__":

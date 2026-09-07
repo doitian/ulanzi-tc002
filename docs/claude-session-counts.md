@@ -26,7 +26,8 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
    badge kind and the displayed count.
 
 Restart `tc002 watch agents` after changing hooks. Already-open Claude
-sessions pick up the hooks on their next event.
+sessions pick up the hooks on their next event. If watch did not exit
+cleanly, run `tc002 watch agents --teardown` to remove leftover hooks.
 
 ## What the hooks report
 
