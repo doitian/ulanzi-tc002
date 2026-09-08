@@ -42,6 +42,30 @@ uv run tc002 status
 the clock. File tailing still follows rotation, truncation, and a missing file;
 a blank line clears the display.
 
+## Watch agents
+
+Run `tc002 watch agents` for a simple terminal interface. It starts with no
+providers; use `--providers opencode,claude` to select providers at startup.
+Enter one command per line on stdin:
+
+```text
+a codex
+a claude
+r codex
+r all
+```
+
+`a PROVIDER` adds a provider; `r PROVIDER` removes it. Available providers are
+`opencode`, `claude`, `codex`, and `grok`. `r all` removes every active provider
+and keeps the interface open for more commands. Status updates continue while
+waiting for input. Invalid commands print an error and leave the watcher running.
+
+Adding a provider installs its hooks or plugin and creates its display app.
+Removing it cleans up both and discards its session state. Ctrl-C or stdin EOF
+exits and cleans up all active providers. `--once` polls the initial providers
+once without reading stdin. Use `--teardown` to remove leftover hooks/plugins
+after an unclean exit.
+
 ## HTTP API
 
 ```powershell

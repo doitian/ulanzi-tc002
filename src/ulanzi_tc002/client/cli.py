@@ -122,8 +122,8 @@ def build_parser():
 
     watch = commands.add_parser("watch", help="Watch agent status")
     watch_sources = watch.add_subparsers(dest="watch_command", required=True)
-    agents = watch_sources.add_parser("agents", help="Watch provider sessions")
-    agents.add_argument("--providers", help="Comma-separated providers (opencode,claude,codex,grok)")
+    agents = watch_sources.add_parser("agents", help="Watch provider sessions", epilog="Stdin commands: a PROVIDER, r PROVIDER, r all. Ctrl-C or EOF exits.")
+    agents.add_argument("--providers", help="Initial comma-separated providers (opencode,claude,codex,grok); default: none")
     agents.add_argument("--bridge-host", default="127.0.0.1", help="Bridge bind host (default: 127.0.0.1)")
     agents.add_argument("--bridge-port", type=int, default=8009, help="Bridge bind port (default: 8009)")
     agents.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds (default: 1)")
@@ -144,13 +144,11 @@ def main(argv=None):
                 args.providers = parse_providers(value)
                 teardown_configs(args.providers)
                 return
-            if not args.providers:
-                raise ValueError("Provide at least one provider")
             if args.interval <= 0:
                 raise ValueError("interval must be positive")
             if not 0 <= args.bridge_port <= 65535:
                 raise ValueError("bridge port must be 0..65535")
-            args.providers = parse_providers(args.providers)
+            args.providers = parse_providers(args.providers) if args.providers is not None else []
         except ValueError as error:
             parser.error(str(error))
     try:

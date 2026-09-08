@@ -1,6 +1,8 @@
+from contextlib import ExitStack
+import queue
 import signal
+import sys
 import threading
-import time
 
 from ulanzi_tc002.client.badge import badge_image
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
@@ -83,7 +85,8 @@ class ClaudeProvider:
 
     def teardown(self):
         self.stop.set()
-        self.thread.join(timeout=2)
+        if hasattr(self, "thread"):
+            self.thread.join(timeout=2)
         self.cleanup()
 
     @staticmethod
@@ -125,7 +128,8 @@ class GrokProvider:
 
     def teardown(self):
         self.stop.set()
-        self.thread.join(timeout=2)
+        if hasattr(self, "thread"):
+            self.thread.join(timeout=2)
         self.cleanup()
 
     @staticmethod
@@ -168,23 +172,86 @@ def _unbind_shutdown(previous):
             pass
 
 
-def watch_agents(args, api):
-    providers = [PROVIDERS[name]() for name in args.providers]
-    store = BridgeStore()
-    bridge = Bridge(args.bridge_host, args.bridge_port, store, args.providers)
-    created = []
-    started = []
-    previous = _bind_shutdown()
+class WatchProviders:
+    def __init__(self, args, api, bridge, store):
+        self.args = args
+        self.api = api
+        self.bridge = bridge
+        self.store = store
+        self.active = {}
+
+    def add(self, name):
+        if name in self.active:
+            return f"{name} is already active"
+        provider = PROVIDERS[name]()
+        with ExitStack() as resources:
+            ensure_app(self.api, self.args, name)
+            resources.callback(delete_app, self.api, self.args, name)
+            self.bridge.add_provider(name)
+            resources.callback(self.bridge.remove_provider, name)
+            resources.callback(provider.teardown)
+            provider.setup(self.bridge.url, self.store)
+            self.active[name] = resources.pop_all()
+        return f"Added {name}"
+
+    def remove(self, name):
+        resources = self.active.pop(name, None)
+        if resources is None:
+            return f"{name} is not active"
+        resources.close()
+        return f"Removed {name}"
+
+    def close(self):
+        # Attempt every removal even if one provider fails to clean up.
+        with ExitStack() as removals:
+            for name in self.active:
+                removals.callback(self.remove, name)
+
+    def command(self, line):
+        parts = line.split()
+        if not parts:
+            return
+        if len(parts) != 2 or parts[0] not in ("a", "r"):
+            raise ValueError("Commands: a PROVIDER | r PROVIDER | r all")
+        action, name = parts
+        if action == "r" and name == "all":
+            self.close()
+            return "Removed all providers"
+        if name not in KNOWN_PROVIDERS:
+            raise ValueError(f"Unknown provider: {name}. Choose from: {', '.join(KNOWN_PROVIDERS)}")
+        return self.add(name) if action == "a" else self.remove(name)
+
+
+def read_commands(stream, commands):
     try:
+        for line in stream:
+            commands.put(line)
+    except (OSError, ValueError) as error:
+        commands.put(error)
+    finally:
+        commands.put(None)
+
+
+def watch_agents(args, api):
+    store = BridgeStore()
+    bridge = Bridge(args.bridge_host, args.bridge_port, store, [])
+    with ExitStack() as cleanup:
+        cleanup.callback(_unbind_shutdown, _bind_shutdown())
         bridge.start()
-        for provider in providers:
-            ensure_app(api, args, provider.name)
-            created.append(provider.name)
-            provider.setup(bridge.url, store)
-            started.append(provider)
+        cleanup.callback(bridge.stop)
+        providers = WatchProviders(args, api, bridge, store)
+        cleanup.callback(providers.close)
+        for name in args.providers:
+            providers.add(name)
+        commands = queue.Queue()
+        if not args.once:
+            print("Commands: a PROVIDER | r PROVIDER | r all. Ctrl-C or EOF exits.", flush=True)
+            print(f"Providers: {', '.join(KNOWN_PROVIDERS)}", flush=True)
+            print(f"Active: {', '.join(providers.active) or '(none)'}", flush=True)
+            threading.Thread(target=read_commands, args=(sys.stdin, commands), daemon=True).start()
         last = None
         while True:
-            states = [(provider.name, *store.snapshot(provider.name)) for provider in providers]
+            states = [(name, *store.snapshot(name)) for name in providers.active]
             key = tuple((name, kind, count, counts["ask"], counts["run"], counts["idle"]) for name, kind, count, counts in states)
             if key != last:
                 for name, kind, count, counts in states:
@@ -192,11 +259,19 @@ def watch_agents(args, api):
                 last = key
             if args.once:
                 return
-            time.sleep(args.interval)
-    finally:
-        for provider in reversed(started):
-            provider.teardown()
-        for name in reversed(created):
-            delete_app(api, args, name)
-        bridge.stop()
-        _unbind_shutdown(previous)
+            try:
+                line = commands.get(timeout=args.interval)
+            except queue.Empty:
+                continue
+            if line is None:
+                return
+            if isinstance(line, Exception):
+                raise line
+            try:
+                message = providers.command(line)
+            except (OSError, ValueError) as error:
+                print(f"Error: {error}", flush=True)
+            else:
+                if message:
+                    print(message, flush=True)
+                    print(f"Active: {', '.join(providers.active) or '(none)'}", flush=True)

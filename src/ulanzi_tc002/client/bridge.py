@@ -109,8 +109,14 @@ class BridgeStore:
                     blocking.add(f"{instance}:{sid}")
         return summarize(status_by_id, blocking)
 
+    def clear(self, provider):
+        with self.lock:
+            self.hooks.pop(provider, None)
+            for key in [key for key in self.instances if key[0] == provider]:
+                del self.instances[key]
 
-def make_handler(store, providers):
+
+def make_handler(store, providers, lock):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/health":
@@ -120,7 +126,7 @@ def make_handler(store, providers):
 
         def do_POST(self):
             parts = self.path.strip("/").split("/")
-            if len(parts) != 2 or parts[0] != "providers" or parts[1] not in providers:
+            if len(parts) != 2 or parts[0] != "providers":
                 self.send_error(404)
                 return
             try:
@@ -130,7 +136,11 @@ def make_handler(store, providers):
                 return
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                store.update(parts[1], payload)
+                with lock:
+                    if parts[1] not in providers:
+                        self.send_error(404)
+                        return
+                    store.update(parts[1], payload)
             except (ValueError, UnicodeDecodeError):
                 self.send_error(400)
                 return
@@ -153,8 +163,20 @@ def make_handler(store, providers):
 
 class Bridge:
     def __init__(self, host, port, store, providers):
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(store, frozenset(providers)))
+        self.store = store
+        self.providers = set(providers)
+        self.lock = threading.Lock()
+        self.httpd = ThreadingHTTPServer((host, port), make_handler(store, self.providers, self.lock))
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+
+    def add_provider(self, name):
+        with self.lock:
+            self.providers.add(name)
+
+    def remove_provider(self, name):
+        with self.lock:
+            self.providers.discard(name)
+            self.store.clear(name)
 
     @property
     def url(self):

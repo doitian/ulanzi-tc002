@@ -189,9 +189,11 @@ class WatchCliTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8010", source)
         self.assertNotIn("http://127.0.0.1:8009", source)
 
-    def test_providers_required_without_teardown(self):
-        with self.assertRaises(SystemExit):
+    @patch("ulanzi_tc002.client.config.load_client_config", return_value={})
+    def test_starts_without_providers(self, _config):
+        with patch("ulanzi_tc002.client.watch.watch_agents") as watch:
             main(["watch", "agents"])
+        self.assertEqual(watch.call_args.args[0].providers, [])
 
     @patch("ulanzi_tc002.client.cli.request")
     def test_teardown_removes_all_provider_configs(self, cli_request):
@@ -251,14 +253,14 @@ class WatchCliTests(unittest.TestCase):
             handlers[sig] = handler
             return signal.SIG_DFL
 
-        def trip(_interval):
+        def trip(timeout):
             handlers[signal.SIGTERM](signal.SIGTERM, None)
 
         with tempfile.TemporaryDirectory() as tmp:
             environ = {**os.environ, "XDG_CONFIG_HOME": tmp}
             with patch.dict(os.environ, environ, clear=True):
                 with patch("ulanzi_tc002.client.watch.signal.signal", bind):
-                    with patch("ulanzi_tc002.client.watch.time.sleep", trip):
+                    with patch("ulanzi_tc002.client.watch.queue.Queue.get", side_effect=trip), patch("sys.stdin", io.StringIO()):
                         with self.assertRaises(SystemExit) as ctx:
                             main(["watch", "agents", "--providers", "opencode", "--bridge-port", "0"])
             self.assertEqual(ctx.exception.code, 0)
