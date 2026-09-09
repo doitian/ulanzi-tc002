@@ -40,12 +40,21 @@ input.
 | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `status = busy`, clear blocking |
 | `PermissionRequest`, `Elicitation` | blocking (ASK) |
 | `Notification` of `permission_prompt`, `agent_needs_input`, `elicitation_dialog`, `elicitation_url_dialog` | blocking (ASK) |
-| `Stop`, `StopFailure` | `status = idle`, then prune |
+| `Stop`, `StopFailure` | RUN if the payload reports running background tasks; otherwise idle, then prune |
 | `SessionStart` | prune only; the new chat is not counted until ASK or RUN |
 | `SessionEnd` | drop |
 
 `retry` is not a Claude hook status. `summarize()` still treats `busy` and
 `retry` as running if an agents row ever sends `retry`.
+
+The [Stop hook's `background_tasks` array](https://code.claude.com/docs/en/hooks#stop-input)
+keeps a session in RUN while a shell command, subagent, or other task is
+running after the foreground response ends. Multiple tasks still count as
+one session. A Stop event can discover such a session even if its earlier
+hooks were missed. A subsequent Stop with no running tasks returns it to
+IDLE; SessionEnd removes it. Scheduled `session_crons` alone do not count as
+running work. Payloads without background task information retain the
+previous idle behavior.
 
 Desktop vs CLI is `entrypoint` containing `desktop`, else a match against
 `cliSessionId` / `sessionId` in Claude Desktop's session files, else `cli`.

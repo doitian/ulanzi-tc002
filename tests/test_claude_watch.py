@@ -104,8 +104,48 @@ class ClaudeHookTests(unittest.TestCase):
         apply_agents(sessions, [{"sessionId": "s", "state": "running"}])
         self.assertEqual(sessions["s"]["status"], "busy")
 
+    def test_stop_with_background_work_keeps_session_running(self):
+        for task_type in ("shell", "subagent", "MCP task"):
+            with self.subTest(task_type=task_type):
+                sessions = {}
+                apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
+                apply_hook(sessions, hook("s", "PermissionRequest"), set())
+                apply_hook(sessions, hook("s", "Stop", background_tasks=[
+                    {"id": "task-1", "type": task_type, "status": "running"},
+                ]), set())
+                self.assertEqual(sessions["s"]["status"], "busy")
+                self.assertFalse(sessions["s"]["blocking"])
+                apply_agents(sessions, [{"sessionId": "s", "pid": 9}])
+                apply_hook(sessions, hook("other", "SessionStart"), set())
+                self.assertEqual(sessions["s"]["status"], "busy")
+                apply_hook(sessions, hook("s", "Stop", background_tasks=[]), set())
+                self.assertEqual(sessions["s"]["status"], "idle")
+
+    def test_stop_without_running_tasks_is_idle(self):
+        for tasks in (None, [], {}, "running", [None], [{"status": "completed"}],
+                      [{"status": "failed"}], [{"status": "stopped"}]):
+            with self.subTest(tasks=tasks):
+                sessions = {}
+                apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
+                apply_hook(sessions, hook("s", "Stop", background_tasks=tasks,
+                                          session_crons=[{"id": "cron-1"}]), set())
+                self.assertEqual(sessions["s"]["status"], "idle")
+
 
 class ClaudeBridgeTests(unittest.TestCase):
+    def test_background_only_stop_discovers_session_and_counts_once(self):
+        store = BridgeStore(desktop_ids={"s"})
+        store.update("claude", hook("s", "Stop", background_tasks=[
+            {"id": "task-1", "type": "shell", "status": "running"},
+            {"id": "task-2", "type": "subagent", "status": "running"},
+        ]))
+        self.assertEqual(store.snapshot("claude"),
+                         ("run", 1, {"ask": 0, "run": 1, "idle": 0}))
+        self.assertEqual(store.hooks["claude"]["s"]["source"], "desktop")
+        store.update("claude", hook("s", "SessionEnd"))
+        self.assertEqual(store.snapshot("claude"),
+                         ("idle", 0, {"ask": 0, "run": 0, "idle": 0}))
+
     def test_hooks_aggregate_and_stay_fresh(self):
         store = BridgeStore(stale=5, desktop_ids={"desk-1"})
         store.update("claude", hook("desk-1", "UserPromptSubmit"))

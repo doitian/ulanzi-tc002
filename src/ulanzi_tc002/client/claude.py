@@ -137,13 +137,20 @@ def apply_hook(sessions, event, desktop_ids=None):
             prune(sessions, keep=sid, source=source)
         return
     if name in IDLE_EVENTS:
+        tasks = event.get("background_tasks")
+        background_running = isinstance(tasks, list) and any(
+            isinstance(task, dict) and agent_kind(task)[0] == "busy" for task in tasks
+        )
         item = sessions.get(sid)
+        if item is None and background_running:
+            item = {"status": "busy", "blocking": False, "source": source}
+            sessions[sid] = item
         if item is None:
             return
-        if item.get("child"):
+        if item.get("child") and not background_running:
             sessions.pop(sid, None)
             return
-        item["status"] = "idle"
+        item["status"] = "busy" if background_running else "idle"
         item["blocking"] = False
         prune(sessions, keep=sid, source=source)
 
