@@ -61,7 +61,8 @@ and keeps the interface open for more commands. Status updates continue while
 waiting for input. Invalid commands print an error and leave the watcher running.
 
 Adding a provider installs its hooks or plugin and creates its display app.
-Removing it cleans up both and discards its session state. Ctrl-C or stdin EOF
+Removing it cleans up both and discards its session state. With two or more
+providers active, a combined `agents` app shows summed ask/run/idle counts. Ctrl-C or stdin EOF
 exits and cleans up all active providers. `--once` polls the initial providers
 once without reading stdin. Use `--teardown` to remove leftover hooks/plugins
 after an unclean exit.

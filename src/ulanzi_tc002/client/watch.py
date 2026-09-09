@@ -12,6 +12,7 @@ from ulanzi_tc002.client.grok import install_hooks as install_grok_hooks, remove
 from ulanzi_tc002.client.opencode import install_plugin, remove_plugin
 
 KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok")
+AGENTS_APP = "agents"
 
 
 def parse_providers(value):
@@ -38,6 +39,19 @@ def ensure_app(api, args, name):
 
 def delete_app(api, args, name):
     api(args, f"/api/apps/{name}", method="DELETE")
+
+
+def combined_status(states):
+    counts = {"ask": 0, "run": 0, "idle": 0}
+    for _name, _kind, _count, item in states:
+        counts["ask"] += item["ask"]
+        counts["run"] += item["run"]
+        counts["idle"] += item["idle"]
+    if counts["ask"]:
+        return "ask", counts["ask"], counts
+    if counts["run"]:
+        return "run", counts["run"], counts
+    return "idle", counts["idle"], counts
 
 
 def send_badge(api, args, name, kind, count, counts):
@@ -179,6 +193,18 @@ class WatchProviders:
         self.bridge = bridge
         self.store = store
         self.active = {}
+        self.summary = None
+
+    def _sync_summary(self):
+        if len(self.active) > 1:
+            if self.summary is None:
+                with ExitStack() as resources:
+                    ensure_app(self.api, self.args, AGENTS_APP)
+                    resources.callback(delete_app, self.api, self.args, AGENTS_APP)
+                    self.summary = resources.pop_all()
+        elif self.summary is not None:
+            self.summary.close()
+            self.summary = None
 
     def add(self, name):
         if name in self.active:
@@ -192,6 +218,7 @@ class WatchProviders:
             resources.callback(provider.teardown)
             provider.setup(self.bridge.url, self.store)
             self.active[name] = resources.pop_all()
+        self._sync_summary()
         return f"Added {name}"
 
     def remove(self, name):
@@ -199,6 +226,7 @@ class WatchProviders:
         if resources is None:
             return f"{name} is not active"
         resources.close()
+        self._sync_summary()
         return f"Removed {name}"
 
     def close(self):
@@ -252,9 +280,12 @@ def watch_agents(args, api):
         last = None
         while True:
             states = [(name, *store.snapshot(name)) for name in providers.active]
-            key = tuple((name, kind, count, counts["ask"], counts["run"], counts["idle"]) for name, kind, count, counts in states)
+            displays = list(states)
+            if len(states) > 1:
+                displays.append((AGENTS_APP, *combined_status(states)))
+            key = tuple((name, kind, count, counts["ask"], counts["run"], counts["idle"]) for name, kind, count, counts in displays)
             if key != last:
-                for name, kind, count, counts in states:
+                for name, kind, count, counts in displays:
                     send_badge(api, args, name, kind, count, counts)
                 last = key
             if args.once:

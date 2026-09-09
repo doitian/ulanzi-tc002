@@ -83,6 +83,11 @@ class BadgeTests(unittest.TestCase):
             rows = [y for y, row in enumerate(compose(kind, 0)) if color in row]
             self.assertLessEqual(abs(rows[0] - (HEIGHT - 1 - rows[-1])), 1, kind)
 
+    def test_agents_logo_is_not_a_provider_logo(self):
+        agents = compose("idle", 0, "agents")
+        for name in ("opencode", "claude", "codex", "grok"):
+            self.assertNotEqual(agents, compose("idle", 0, name), name)
+
 
 class BridgeTests(unittest.TestCase):
     def test_post_aggregates_and_stale_drops(self):

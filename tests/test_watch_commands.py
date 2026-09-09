@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.opencode import plugin_path
+from ulanzi_tc002.client.watch import combined_status
 
 
 class WatchCommandTests(unittest.TestCase):
@@ -39,12 +40,13 @@ class WatchCommandTests(unittest.TestCase):
             call.args[0].rsplit("/", 1)[-1] for call in self.request.call_args_list
             if call.kwargs["method"] == "DELETE"
         ]
-        self.assertEqual(created, ["opencode", "codex", "opencode"])
-        self.assertEqual(deleted, ["opencode", "codex", "opencode"])
+        self.assertEqual(created, ["opencode", "codex", "agents", "opencode"])
+        self.assertEqual(deleted, ["opencode", "agents", "codex", "opencode"])
         self.assertFalse(plugin_path().exists())
         self.assertIn("Active: (none)", self.output.getvalue())
         self.assertIn("Removed all providers", self.output.getvalue())
         self.assertIn("codex IDLE", self.output.getvalue())
+        self.assertIn("agents IDLE", self.output.getvalue())
 
     def test_invalid_and_duplicate_commands_do_not_stop_watching(self):
         self.run_commands("\na\nx codex\na unknown\na all\na opencode extra\na opencode\na opencode\nr codex\nr opencode\nr opencode\n")
@@ -113,6 +115,54 @@ class WatchCommandTests(unittest.TestCase):
         self.assertIn("Removed all providers", self.output.getvalue())
         self.assertIn("Added opencode", self.output.getvalue())
         self.assertFalse(plugin_path().exists())
+
+    def test_combined_status_sums_and_follows_priority(self):
+        ask, count, counts = combined_status([
+            ("opencode", "ask", 1, {"ask": 1, "run": 2, "idle": 0}),
+            ("codex", "run", 3, {"ask": 0, "run": 3, "idle": 4}),
+        ])
+        self.assertEqual((ask, count), ("ask", 1))
+        self.assertEqual(counts, {"ask": 1, "run": 5, "idle": 4})
+        run, count, counts = combined_status([
+            ("opencode", "run", 2, {"ask": 0, "run": 2, "idle": 1}),
+            ("claude", "idle", 3, {"ask": 0, "run": 0, "idle": 3}),
+        ])
+        self.assertEqual((run, count), ("run", 2))
+        self.assertEqual(counts, {"ask": 0, "run": 2, "idle": 4})
+        idle, count, counts = combined_status([
+            ("opencode", "idle", 1, {"ask": 0, "run": 0, "idle": 1}),
+            ("grok", "idle", 0, {"ask": 0, "run": 0, "idle": 0}),
+        ])
+        self.assertEqual((idle, count), ("idle", 1))
+        self.assertEqual(counts, {"ask": 0, "run": 0, "idle": 1})
+
+    def test_multiple_providers_send_agents_summary(self):
+        snapshots = {
+            "opencode": ("ask", 1, {"ask": 1, "run": 2, "idle": 0}),
+            "codex": ("run", 3, {"ask": 0, "run": 3, "idle": 4}),
+        }
+
+        def snapshot(_store, name):
+            return snapshots[name]
+
+        with patch.object(BridgeStore, "snapshot", snapshot):
+            self.run_commands("", "--providers", "opencode,codex", "--once")
+        created = [
+            call.kwargs["json_body"]["name"] for call in self.request.call_args_list
+            if call.args[0].endswith("/api/apps")
+        ]
+        updates = [
+            call.args[0].rsplit("/", 1)[-1] for call in self.request.call_args_list
+            if call.kwargs["method"] == "POST" and "/api/apps/" in call.args[0]
+        ]
+        deleted = [
+            call.args[0].rsplit("/", 1)[-1] for call in self.request.call_args_list
+            if call.kwargs["method"] == "DELETE"
+        ]
+        self.assertEqual(created, ["opencode", "codex", "agents"])
+        self.assertIn("agents", updates)
+        self.assertEqual(deleted, ["codex", "agents", "opencode"])
+        self.assertIn("agents ASK 1 (ask=1 run=5 idle=4)", self.output.getvalue())
 
 
 class DynamicBridgeTests(unittest.TestCase):
