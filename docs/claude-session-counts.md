@@ -52,7 +52,14 @@ keeps a session in RUN while a shell command, subagent, or other task is
 running after the foreground response ends. Multiple tasks still count as
 one session. A Stop event can discover such a session even if its earlier
 hooks were missed. A subsequent Stop with no running tasks returns it to
-IDLE; SessionEnd removes it. Scheduled `session_crons` alone do not count as
+IDLE; SessionEnd removes it. While the foreground turn is stopped, an explicit
+`idle` report from `claude agents --json` also returns the session to IDLE.
+This handles manually stopping the last background task without another Stop
+hook, on the next successful poll (normally once per second). Busy polls keep
+it running, and rows without a status do not clear activity. A new foreground
+prompt or tool event restores hook-based tracking. If Claude cannot report
+the session's status, the bridge still needs a subsequent hook to clear RUN.
+Scheduled `session_crons` alone do not count as
 running work. Payloads without background task information retain the
 previous idle behavior.
 

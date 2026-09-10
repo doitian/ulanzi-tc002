@@ -131,6 +131,7 @@ def apply_hook(sessions, event, desktop_ids=None):
         item["source"] = source
         item["status"] = "busy"
         item["blocking"] = False
+        item.pop("background_only", None)
         if event.get("agent_id"):
             item["child"] = True
         elif name in SWITCH_EVENTS:
@@ -152,6 +153,10 @@ def apply_hook(sessions, event, desktop_ids=None):
             return
         item["status"] = "busy" if background_running else "idle"
         item["blocking"] = False
+        if background_running:
+            item["background_only"] = True
+        else:
+            item.pop("background_only", None)
         prune(sessions, keep=sid, source=source)
 
 
@@ -172,8 +177,16 @@ def apply_agents(sessions, rows):
         if existing is not None and kind == "idle" and not blocking:
             if pid is not None:
                 existing["pid"] = pid
+            # An explicit idle presence clears background work after a manual
+            # stop, which need not fire another Stop hook. A row with no status
+            # is only a presence report and must not clear activity.
+            if (existing.get("background_only") and not existing.get("blocking")
+                    and (row.get("status") == "idle" or row.get("state") == "idle")):
+                existing["status"] = "idle"
+                existing.pop("background_only", None)
             continue
-        item = {"status": kind, "blocking": blocking, "source": "cli"}
+        item = existing if existing is not None else {"source": "cli"}
+        item.update(status=kind, blocking=blocking)
         if pid is not None:
             item["pid"] = pid
         sessions[sid] = item

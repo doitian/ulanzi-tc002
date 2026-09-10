@@ -133,6 +133,49 @@ class ClaudeHookTests(unittest.TestCase):
 
 
 class ClaudeBridgeTests(unittest.TestCase):
+    def test_manual_background_stop_becomes_idle_on_poll(self):
+        store = BridgeStore(desktop_ids={"s"})
+        store.update("claude", hook("s", "Stop", background_tasks=[
+            {"id": "task-1", "type": "shell", "status": "running"},
+            {"id": "task-2", "type": "subagent", "status": "running"},
+        ]))
+        # Another task still running must keep the session RUN. Repeated
+        # polls must retain the fact that the foreground turn has stopped.
+        for status in ("busy", "busy", None):
+            row = {"sessionId": "s", "pid": 9}
+            if status is not None:
+                row["status"] = status
+            store.merge_agents("claude", [row])
+            self.assertEqual(store.snapshot("claude")[0:2], ("run", 1))
+            self.assertEqual(store.hooks["claude"]["s"]["source"], "desktop")
+        # The final task was stopped in Claude's UI, without a Stop hook.
+        store.merge_agents("claude", [{"sessionId": "s", "pid": 9, "status": "idle"}])
+        self.assertEqual(store.snapshot("claude"),
+                         ("idle", 1, {"ask": 0, "run": 0, "idle": 1}))
+
+    def test_idle_poll_does_not_clear_resumed_foreground_or_ask(self):
+        for event, expected in (("UserPromptSubmit", "run"),
+                                ("PreToolUse", "run"),
+                                ("PostToolUse", "run"),
+                                ("PermissionRequest", "ask")):
+            with self.subTest(event=event):
+                store = BridgeStore(desktop_ids=set())
+                store.update("claude", hook("s", "Stop", background_tasks=[
+                    {"id": "task-1", "type": "shell", "status": "running"},
+                ]))
+                store.update("claude", hook("s", event))
+                store.merge_agents("claude", [{"sessionId": "s", "status": "idle"}])
+                self.assertEqual(store.snapshot("claude")[0:2], (expected, 1))
+
+    def test_unavailable_poll_keeps_background_session_running(self):
+        store = BridgeStore(desktop_ids=set())
+        store.update("claude", hook("s", "Stop", background_tasks=[
+            {"id": "task-1", "type": "shell", "status": "running"},
+        ]))
+        for rows in (None, [], [{"sessionId": "s", "status": "unknown"}]):
+            store.merge_agents("claude", rows)
+            self.assertEqual(store.snapshot("claude")[0:2], ("run", 1))
+
     def test_background_only_stop_discovers_session_and_counts_once(self):
         store = BridgeStore(desktop_ids={"s"})
         store.update("claude", hook("s", "Stop", background_tasks=[
