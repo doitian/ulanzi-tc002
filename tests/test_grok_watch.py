@@ -191,7 +191,7 @@ class GrokBadgeTests(unittest.TestCase):
 class GrokCliTests(unittest.TestCase):
     def test_parse_providers_includes_codex_and_grok(self):
         self.assertEqual(parse_providers("codex,grok"), ["codex", "grok"])
-        self.assertEqual(parse_providers("opencode,claude,codex,grok"), ["opencode", "claude", "codex", "grok"])
+        self.assertEqual(parse_providers("opencode,claude,codex,grok,pi"), ["opencode", "claude", "codex", "grok", "pi"])
 
     def test_install_and_remove(self):
         with tempfile.TemporaryDirectory() as tmp:

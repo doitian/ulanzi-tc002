@@ -16,6 +16,7 @@ from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.codex import hooks_path as codex_hooks_path, install_hooks as install_codex_hooks, script_path as codex_script_path
 from ulanzi_tc002.client.grok import hooks_path as grok_hooks_path, install_hooks as install_grok_hooks, script_path as grok_script_path
 from ulanzi_tc002.client.opencode import install_plugin, plugin_path, plugin_source, summarize
+from ulanzi_tc002.client.pi import extension_path, install_extension
 from ulanzi_tc002.client.watch import parse_providers
 
 
@@ -144,6 +145,7 @@ class WatchCliTests(unittest.TestCase):
         self.assertEqual(parse_providers("opencode,claude"), ["opencode", "claude"])
         self.assertEqual(parse_providers("codex"), ["codex"])
         self.assertEqual(parse_providers("grok"), ["grok"])
+        self.assertEqual(parse_providers("pi"), ["pi"])
         with self.assertRaises(ValueError):
             parse_providers("nope")
 
@@ -210,17 +212,20 @@ class WatchCliTests(unittest.TestCase):
                 "CLAUDE_CONFIG_DIR": str(root / "claude"),
                 "CODEX_HOME": str(root / "codex"),
                 "GROK_HOME": str(root / "grok"),
+                "PI_CODING_AGENT_DIR": str(root / "pi"),
             }
             install_plugin("http://127.0.0.1:8009", environ)
             install_claude_hooks("http://127.0.0.1:8009", environ)
             install_codex_hooks("http://127.0.0.1:8009", environ)
             install_grok_hooks("http://127.0.0.1:8009", environ)
+            install_extension("http://127.0.0.1:8009", environ)
             self.assertTrue(plugin_path(environ).exists())
             self.assertTrue(settings_path(environ).exists())
             self.assertTrue(codex_hooks_path(environ).exists())
             self.assertTrue(codex_script_path(environ).exists())
             self.assertTrue(grok_hooks_path(environ).exists())
             self.assertTrue(grok_script_path(environ).exists())
+            self.assertTrue(extension_path(environ).exists())
             with patch.dict(os.environ, environ, clear=True):
                 main(["watch", "agents", "--teardown"])
             self.assertFalse(plugin_path(environ).exists())
@@ -229,6 +234,7 @@ class WatchCliTests(unittest.TestCase):
             self.assertFalse(codex_script_path(environ).exists())
             self.assertFalse(grok_hooks_path(environ).exists())
             self.assertFalse(grok_script_path(environ).exists())
+            self.assertFalse(extension_path(environ).exists())
             self.assertFalse(cli_request.called)
 
     @patch("ulanzi_tc002.client.cli.request")

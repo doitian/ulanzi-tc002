@@ -10,8 +10,9 @@ from ulanzi_tc002.client.claude import install_hooks, list_agents, remove_hooks
 from ulanzi_tc002.client.codex import install_hooks as install_codex_hooks, remove_hooks as remove_codex_hooks
 from ulanzi_tc002.client.grok import install_hooks as install_grok_hooks, remove_hooks as remove_grok_hooks
 from ulanzi_tc002.client.opencode import install_plugin, remove_plugin
+from ulanzi_tc002.client.pi import install_extension, remove_extension
 
-KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok")
+KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok", "pi")
 AGENTS_APP = "agents"
 
 
@@ -151,11 +152,26 @@ class GrokProvider:
         remove_grok_hooks()
 
 
+class PiProvider:
+    name = "pi"
+
+    def setup(self, bridge_url, store=None):
+        install_extension(bridge_url)
+
+    def teardown(self):
+        self.cleanup()
+
+    @staticmethod
+    def cleanup():
+        remove_extension()
+
+
 PROVIDERS = {
     OpencodeProvider.name: OpencodeProvider,
     ClaudeProvider.name: ClaudeProvider,
     CodexProvider.name: CodexProvider,
     GrokProvider.name: GrokProvider,
+    PiProvider.name: PiProvider,
 }
 
 

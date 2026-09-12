@@ -12,6 +12,7 @@ CLAUDE_INNER = (140, 62, 41)
 CODEX_OUTER = (16, 163, 127)
 GROK_OUTER = (220, 220, 220)
 AGENTS_OUTER = (148, 163, 184)
+PI_OUTER = (250, 250, 250)
 STATUS_COLOR = {
     "ask": (242, 166, 90),
     "run": (232, 207, 120),
@@ -108,6 +109,24 @@ _AGENTS = (
     "................",
     "................",
 )
+_PI = (
+    "................",
+    ".##########.....",
+    ".##########.....",
+    ".##########.....",
+    ".###....###.....",
+    ".###....###.....",
+    ".###....###.....",
+    ".###....###.....",
+    ".#######...####.",
+    ".#######...####.",
+    ".#######...####.",
+    ".###.......####.",
+    ".###.......####.",
+    ".###.......####.",
+    ".###.......####.",
+    "................",
+)
 _ASK = (
     "................",
     "......####......",
@@ -190,7 +209,8 @@ CLAUDE = _sprite(_CLAUDE, {"#": CLAUDE_OUTER, "+": CLAUDE_INNER, ".": BLACK})
 CODEX = _sprite(_CODEX, {"#": CODEX_OUTER, "+": CODEX_OUTER, ".": BLACK})
 GROK = _sprite(_GROK, {"#": GROK_OUTER, "+": GROK_OUTER, ".": BLACK})
 AGENTS = _sprite(_AGENTS, {"#": AGENTS_OUTER, "+": AGENTS_OUTER, ".": BLACK})
-LOGOS = {"opencode": OPENCODE, "claude": CLAUDE, "codex": CODEX, "grok": GROK, "agents": AGENTS}
+PI = _sprite(_PI, {"#": PI_OUTER, "+": PI_OUTER, ".": BLACK})
+LOGOS = {"opencode": OPENCODE, "claude": CLAUDE, "codex": CODEX, "grok": GROK, "agents": AGENTS, "pi": PI}
 STATUSES = {
     "ask": _paint(_ASK, STATUS_COLOR["ask"]),
     "run": _paint(_RUN, STATUS_COLOR["run"]),
