@@ -1,11 +1,19 @@
+from importlib.resources import files
+
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Icon
 
+from ulanzi_tc002.frames import image_data_uri
 from ulanzi_tc002.server.registry import AppExists
 
 
 def build_mcp(registry):
-    mcp = MCPServer("tc002")
+    icon = files("ulanzi_tc002.server").joinpath("ui/favicon.png").read_bytes()
+    mcp = MCPServer(
+        "tc002",
+        icons=[Icon(src=image_data_uri(icon), mimeType="image/png", sizes=["128x128"])],
+    )
 
     @mcp.tool()
     def list_apps() -> list:
