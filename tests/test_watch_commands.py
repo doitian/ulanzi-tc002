@@ -66,7 +66,7 @@ class WatchCommandTests(unittest.TestCase):
             install_plugin(bridge_url)
             raise OSError("installation failed")
 
-        with patch("ulanzi_tc002.client.watch.install_plugin", side_effect=fail_after_install):
+        with patch("ulanzi_tc002.client.watch.OpencodeProvider.install", side_effect=fail_after_install):
             self.run_commands("a opencode\na codex\n")
         self.assertFalse(plugin_path().exists())
         self.assertIn("Error: installation failed", self.output.getvalue())

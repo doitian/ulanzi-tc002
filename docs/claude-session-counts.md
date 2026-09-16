@@ -20,10 +20,10 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
    extension, and the web. Each event POSTs to `/providers/claude`.
 3. `watch agents` also polls `claude agents --json` so CLI sessions that were
    already live appear without waiting for the next hook.
-4. The bridge keeps hook-tracked sessions in one map, then posts two instance
-   records: `desktop` and `cli`.
-5. `snapshot("claude")` merges those records, then `summarize()` picks the
-   badge kind and the displayed count.
+4. The adapter translates hooks into shared `AgentEvent` records. The
+   bridge retains each `AgentSession` with its `desktop` or `cli` source.
+5. `snapshot("claude")` reads those sessions and any plugin reports, then
+   the shared `summarize()` picks the badge kind and displayed count.
 
 Restart `tc002 watch agents` after changing hooks. Already-open Claude
 sessions pick up the hooks on their next event. If watch did not exit
@@ -37,15 +37,17 @@ input.
 
 | Event | Effect |
 | --- | --- |
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `status = busy`, clear blocking |
+| `UserPromptSubmit` | working (RUN), clear waiting |
+| `PreToolUse` | discover working activity if unseen; preserve waiting and done |
+| `PostToolUse` | resume waiting activity; never create a session or revive a done turn |
 | `PermissionRequest`, `Elicitation` | blocking (ASK) |
 | `Notification` of `permission_prompt`, `agent_needs_input`, `elicitation_dialog`, `elicitation_url_dialog` | blocking (ASK) |
-| `Stop`, `StopFailure` | RUN if the payload reports running background tasks; otherwise idle, then prune |
+| `Stop`, `StopFailure` | working if the payload reports running background tasks; otherwise done (IDLE), then prune |
 | `SessionStart` | prune only; the new chat is not counted until ASK or RUN |
-| `SessionEnd` | drop |
+| `SessionEnd` | drop the session and its tracked children |
 
 `retry` is not a Claude hook status. `summarize()` still treats `busy` and
-`retry` as running if an agents row ever sends `retry`.
+`retry` as running if a direct plugin-style POST sends `retry`.
 
 The [Stop hook's `background_tasks` array](https://code.claude.com/docs/en/hooks#stop-input)
 keeps a session in RUN while a shell command, subagent, or other task is
@@ -56,8 +58,9 @@ IDLE; SessionEnd removes it. While the foreground turn is stopped, an explicit
 `idle` report from `claude agents --json` also returns the session to IDLE.
 This handles manually stopping the last background task without another Stop
 hook, on the next successful poll (normally once per second). Busy polls keep
-it running, and rows without a status do not clear activity. A new foreground
-prompt or tool event restores hook-based tracking. If Claude cannot report
+it running, and rows without a status do not clear activity. Rows explicitly
+marked done, failed, or stopped remove that session and its children. A new
+foreground prompt or tool event restores hook-based tracking. If Claude cannot report
 the session's status, the bridge still needs a subsequent hook to clear RUN.
 Scheduled `session_crons` alone do not count as
 running work. Payloads without background task information retain the
@@ -77,51 +80,21 @@ sessions of that source when:
 
 A new Desktop session, `/clear`, `/resume`, or a new CLI session only switches
 focus. Permission / elicitation / ask notifications add the session even when
-that chat is not focused. Subagent turns use `agent_id`. Sessions from
+that chat is not focused. Subagent turns use `{session_id}:{agent_id}` so child
+events cannot overwrite the parent. Ending a parent also removes its children. Sessions from
 `claude agents --json` carry a `pid`; prune skips a different pid so a second
 CLI terminal is not dropped when the first runs `/clear`.
 
-## Bridge merge
+## Bridge merge and badge counts
 
-`BridgeStore` keys instances by `(provider, id)`. For Claude the ids are
-`desktop` and `cli`, rebuilt on every hook or agents poll. Direct POSTs of
-`{ id, status, blocking }` still work and go stale after 5 seconds.
+`BridgeStore` stores Claude hook sessions separately from plugin
+heartbeats. Hook state is read directly during `snapshot()` and does not
+expire after five seconds of silence. Lifecycle events, idle pruning, and
+provider discovery govern its lifetime. Direct POSTs of
+`{ id, status, blocking }` remain supported and expire after five seconds
+without a report.
 
-Hook-backed instances are refreshed on every `snapshot()`, so an idle Claude
-session does not vanish after 5 seconds of silence. `SessionEnd` (or an
-empty map after prune) removes the instance.
-
-`snapshot()`:
-
-1. Rebuilds `desktop` / `cli` from the hook map (timestamp = now).
-2. Drops any non-hook instance with no POST for 5 seconds.
-3. Prefixes each session id with `"{desktop|cli}:"` so the two sources
-   cannot collide.
-4. Unions `blocking` the same way.
-5. Calls `summarize(status_by_id, blocking)`.
-
-Desktop ASK 1 plus CLI RUN 1 is ASK 1 on the badge (ask wins), with
-`ask=1 run=1 idle=0` in the CLI line.
-
-## `summarize`
-
-Same function as OpenCode. A session in `blocking` is ASK, even if `status`
-still says `busy`. The same session is not also counted as RUN.
-
-```
-ask  = |blocking|
-run  = sessions whose status is busy/retry and that are not blocking
-idle = sessions whose status is idle and that are not blocking
-```
-
-Displayed kind is the first of ASK, RUN, IDLE that has a non-zero count, or
-IDLE when nothing is tracked:
-
-| Condition | Kind | Count on the badge |
-| --- | --- | --- |
-| `ask > 0` | `ask` | `ask` |
-| else `run > 0` | `run` | `run` |
-| else | `idle` | `idle` (0 if the map is empty) |
-
-The clock omits a displayed 0 and caps at `9+`. The CLI still prints the
-three raw totals: `claude RUN 1 (ask=0 run=1 idle=1)`.
+The [shared monitor](agent-monitoring.md#badge-counts) maps waiting to ASK,
+working to RUN, and idle/done to IDLE. ASK wins over RUN, which wins over IDLE;
+a waiting session is never counted again as running. Hook and plugin identities
+are kept separate, including reports whose instance id is `cli` or `desktop`.

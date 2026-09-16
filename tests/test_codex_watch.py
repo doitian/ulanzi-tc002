@@ -2,12 +2,14 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from ulanzi_tc002.client.badge import BLACK, CODEX_OUTER, HEIGHT, OPENCODE_OUTER, WIDTH, compose
+from ulanzi_tc002.client.agent_status import AgentSession, AgentStatus
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.codex import (
@@ -57,13 +59,13 @@ class CodexHookTests(unittest.TestCase):
         apply_hook(sessions, hook("ask", "PermissionRequest"), set())
         apply_hook(sessions, hook("fresh", "SessionStart"), set())
         self.assertNotIn("old", sessions)
-        self.assertEqual(sessions["run"]["status"], "busy")
-        self.assertTrue(sessions["ask"]["blocking"])
+        self.assertEqual(sessions["run"].status, AgentStatus.WORKING)
+        self.assertEqual(sessions["ask"].status, AgentStatus.WAITING)
         apply_hook(sessions, hook("fresh", "UserPromptSubmit"), set())
         apply_hook(sessions, hook("fresh", "Stop"), set())
         self.assertNotIn("old", sessions)
         self.assertEqual(set(sessions), {"run", "ask", "fresh"})
-        self.assertEqual(sessions["fresh"]["status"], "idle")
+        self.assertEqual(sessions["fresh"].status, AgentStatus.DONE)
 
     def test_idle_child_drops_and_other_source_stays(self):
         sessions = {}
@@ -88,7 +90,7 @@ class CodexHookTests(unittest.TestCase):
         apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
         apply_hook(sessions, hook("s", "PermissionRequest"), set())
         apply_hook(sessions, hook("s", "Stop"), set())
-        self.assertEqual(sessions["s"], {"status": "idle", "blocking": False, "source": "cli"})
+        self.assertEqual(sessions["s"], AgentSession(status=AgentStatus.DONE))
         apply_hook(sessions, hook("s", "SessionEnd"), set())
         self.assertEqual(sessions, {})
 
@@ -96,7 +98,7 @@ class CodexHookTests(unittest.TestCase):
         sessions = {}
         apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
         apply_hook(sessions, hook("s", "Interrupt"), set())
-        self.assertEqual(sessions["s"]["status"], "idle")
+        self.assertEqual(sessions["s"].status, AgentStatus.DONE)
 
 
 class CodexBridgeTests(unittest.TestCase):
@@ -108,7 +110,7 @@ class CodexBridgeTests(unittest.TestCase):
         kind, count, counts = store.snapshot("codex")
         self.assertEqual((kind, count), ("run", 1))
         self.assertEqual(counts, {"ask": 0, "run": 1, "idle": 1})
-        kind, count, counts = store.snapshot("codex", now=store.instances[("codex", "desktop")]["updated"] + 6)
+        kind, count, counts = store.snapshot("codex", now=time.time() + 60)
         self.assertEqual((kind, count), ("run", 1))
 
     def test_http_hook_post(self):

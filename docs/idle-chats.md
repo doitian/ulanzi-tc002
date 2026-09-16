@@ -4,8 +4,13 @@ The clock count is not "how many chats exist". Switching to a new chat must
 not stack idle leftovers. These rules are shared by OpenCode, Claude, Codex,
 Grok, and Pi.
 
-A session is tracked only after it has gone ASK or RUN. Historical chats and
-a brand-new empty chat are not counted.
+Hook and plugin sessions are tracked only after they have gone ASK or RUN.
+Historical chats and a brand-new empty chat are not counted. Claude's live
+process discovery can also report an idle session before its first hook.
+
+The [shared monitor](agent-monitoring.md) distinguishes `idle` presence from
+a `done` turn internally; both display as IDLE. A late tool-completion event
+does not restart a done turn.
 
 ## Keep
 

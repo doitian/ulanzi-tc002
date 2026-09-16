@@ -5,11 +5,13 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from ulanzi_tc002.client.badge import BLACK, GROK_OUTER, HEIGHT, OPENCODE_OUTER, WIDTH, compose
+from ulanzi_tc002.client.agent_status import AgentSession, AgentStatus
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.grok import (
@@ -51,13 +53,13 @@ class GrokHookTests(unittest.TestCase):
         apply_hook(sessions, hook("ask", "Notification", notificationType="permission_prompt"))
         apply_hook(sessions, hook("fresh", "SessionStart"))
         self.assertNotIn("old", sessions)
-        self.assertEqual(sessions["run"]["status"], "busy")
-        self.assertTrue(sessions["ask"]["blocking"])
+        self.assertEqual(sessions["run"].status, AgentStatus.WORKING)
+        self.assertEqual(sessions["ask"].status, AgentStatus.WAITING)
         apply_hook(sessions, hook("fresh", "UserPromptSubmit"))
         apply_hook(sessions, hook("fresh", "Stop"))
         self.assertNotIn("old", sessions)
         self.assertEqual(set(sessions), {"run", "ask", "fresh"})
-        self.assertEqual(sessions["fresh"]["status"], "idle")
+        self.assertEqual(sessions["fresh"].status, AgentStatus.DONE)
 
     def test_subagent_events_ignored(self):
         sessions = {}
@@ -65,7 +67,7 @@ class GrokHookTests(unittest.TestCase):
         apply_hook(sessions, hook("child", "UserPromptSubmit", subagentType="explore"))
         apply_hook(sessions, hook("child", "PreToolUse", subagentType="explore"))
         self.assertEqual(set(sessions), {"cli-1"})
-        self.assertEqual(sessions["cli-1"]["status"], "busy")
+        self.assertEqual(sessions["cli-1"].status, AgentStatus.WORKING)
 
     def test_reap_drops_ids_not_in_live_list(self):
         sessions = {}
@@ -93,7 +95,7 @@ class GrokHookTests(unittest.TestCase):
         apply_hook(sessions, hook("s", "UserPromptSubmit"))
         apply_hook(sessions, hook("s", "Notification", notificationType="permission_prompt"))
         apply_hook(sessions, hook("s", "Stop"))
-        self.assertEqual(sessions["s"], {"status": "idle", "blocking": False, "source": "cli"})
+        self.assertEqual(sessions["s"], AgentSession(status=AgentStatus.DONE))
         apply_hook(sessions, hook("s", "SessionEnd"))
         self.assertEqual(sessions, {})
 
@@ -103,7 +105,7 @@ class GrokHookTests(unittest.TestCase):
         self.assertEqual(sessions, {})
         apply_hook(sessions, hook("s", "UserPromptSubmit"))
         apply_hook(sessions, hook("s", "Notification", notificationType="idle_prompt"))
-        self.assertEqual(sessions["s"]["status"], "idle")
+        self.assertEqual(sessions["s"].status, AgentStatus.DONE)
 
 
 class GrokBridgeTests(unittest.TestCase):
@@ -115,7 +117,7 @@ class GrokBridgeTests(unittest.TestCase):
         kind, count, counts = store.snapshot("grok")
         self.assertEqual((kind, count), ("run", 1))
         self.assertEqual(counts, {"ask": 0, "run": 1, "idle": 1})
-        kind, count, counts = store.snapshot("grok", now=store.instances[("grok", "cli")]["updated"] + 6)
+        kind, count, counts = store.snapshot("grok", now=time.time() + 60)
         self.assertEqual((kind, count), ("run", 1))
 
     def test_reap_live_drops_unknown_sessions(self):

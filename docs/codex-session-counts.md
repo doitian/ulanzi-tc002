@@ -21,10 +21,10 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
 3. Desktop vs CLI is `originator` containing `desktop` (from the event or
    the transcript), else a match against Desktop session ids in
    `~/.codex/sessions`, else `cli`.
-4. The bridge keeps hook-tracked sessions in one map, then posts two
-   instance records: `desktop` and `cli`.
-5. `snapshot("codex")` merges those records, then `summarize()` picks the
-   badge kind and the displayed count.
+4. The adapter translates hooks into shared `AgentEvent` records. The
+   bridge retains each `AgentSession` with its `desktop` or `cli` source.
+5. `snapshot("codex")` reads those sessions and any plugin reports, then
+   the shared `summarize()` picks the badge kind and displayed count.
 
 Restart `tc002 watch agents` after changing hooks. If watch did not exit
 cleanly, run `tc002 watch agents --teardown` to remove leftover hooks.
@@ -38,18 +38,20 @@ becomes busy, or when a permission request asks for input.
 
 | Event | Effect |
 | --- | --- |
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `status = busy`, clear blocking |
+| `UserPromptSubmit` | working (RUN), clear waiting |
+| `PreToolUse` | discover working activity if unseen; preserve waiting and done |
+| `PostToolUse` | resume waiting activity; never create a session or revive a done turn |
 | `PermissionRequest` | blocking (ASK) |
-| `Stop`, `Interrupt` | `status = idle`, then prune |
+| `Stop`, `Interrupt` | done (IDLE), then prune |
 | `SessionStart` | prune only; the new chat is not counted until ASK or RUN |
-| `SubagentStop` | drop the child |
-| `SessionEnd` | drop |
+| `SubagentStop` with `agent_id` | drop the child; events without a child identity leave the parent alone |
+| `SessionEnd` | drop the session and its tracked children |
 
 `retry` is not a Codex hook status. `summarize()` still treats `busy` and
 `retry` as running if a direct POST ever sends `retry`.
 
 Subagent turns use `agent_id` and are keyed as `{session_id}:{agent_id}` so
-they do not overwrite the parent.
+they do not overwrite the parent. Ending a parent also removes its children.
 
 ### Idle chats
 
@@ -64,47 +66,16 @@ A new Desktop session, `/clear`, `/resume`, or a new CLI session only
 switches focus. Permission requests add the session even when that chat is
 not focused. Child sessions are dropped as soon as they go idle.
 
-## Bridge merge
+## Bridge merge and badge counts
 
-`BridgeStore` keys instances by `(provider, id)`. For Codex the ids are
-`desktop` and `cli`, rebuilt on every hook. Direct POSTs of
-`{ id, status, blocking }` still work and go stale after 5 seconds.
+`BridgeStore` stores Codex hook sessions separately from plugin
+heartbeats. Hook state is read directly during `snapshot()` and does not
+expire after five seconds of silence. Lifecycle events, idle pruning, and
+provider discovery govern its lifetime. Direct POSTs of
+`{ id, status, blocking }` remain supported and expire after five seconds
+without a report.
 
-Hook-backed instances are refreshed on every `snapshot()`, so an idle Codex
-session does not vanish after 5 seconds of silence. `SessionEnd` (or an
-empty map after prune) removes the instance.
-
-`snapshot()`:
-
-1. Rebuilds `desktop` / `cli` from the hook map (timestamp = now).
-2. Drops any non-hook instance with no POST for 5 seconds.
-3. Prefixes each session id with `"{desktop|cli}:"` so the two sources
-   cannot collide.
-4. Unions `blocking` the same way.
-5. Calls `summarize(status_by_id, blocking)`.
-
-Desktop ASK 1 plus CLI RUN 1 is ASK 1 on the badge (ask wins), with
-`ask=1 run=1 idle=0` in the CLI line.
-
-## `summarize`
-
-Same function as OpenCode. A session in `blocking` is ASK, even if `status`
-still says `busy`. The same session is not also counted as RUN.
-
-```
-ask  = |blocking|
-run  = sessions whose status is busy/retry and that are not blocking
-idle = sessions whose status is idle and that are not blocking
-```
-
-Displayed kind is the first of ASK, RUN, IDLE that has a non-zero count, or
-IDLE when nothing is tracked:
-
-| Condition | Kind | Count on the badge |
-| --- | --- | --- |
-| `ask > 0` | `ask` | `ask` |
-| else `run > 0` | `run` | `run` |
-| else | `idle` | `idle` (0 if the map is empty) |
-
-The clock omits a displayed 0 and caps at `9+`. The CLI still prints the
-three raw totals: `codex RUN 1 (ask=0 run=1 idle=1)`.
+The [shared monitor](agent-monitoring.md#badge-counts) maps waiting to ASK,
+working to RUN, and idle/done to IDLE. ASK wins over RUN, which wins over IDLE;
+a waiting session is never counted again as running. Hook and plugin identities
+are kept separate, including reports whose instance id is `cli` or `desktop`.

@@ -2,11 +2,13 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from ulanzi_tc002.client.badge import BLACK, CLAUDE_OUTER, HEIGHT, OPENCODE_OUTER, WIDTH, compose
+from ulanzi_tc002.client.agent_status import AgentSession, AgentStatus
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.claude import (
     apply_agents,
@@ -47,13 +49,13 @@ class ClaudeHookTests(unittest.TestCase):
         apply_hook(sessions, hook("ask", "PermissionRequest"), set())
         apply_hook(sessions, hook("fresh", "SessionStart"), set())
         self.assertNotIn("old", sessions)
-        self.assertEqual(sessions["run"]["status"], "busy")
-        self.assertTrue(sessions["ask"]["blocking"])
+        self.assertEqual(sessions["run"].status, AgentStatus.WORKING)
+        self.assertEqual(sessions["ask"].status, AgentStatus.WAITING)
         apply_hook(sessions, hook("fresh", "UserPromptSubmit"), set())
         apply_hook(sessions, hook("fresh", "Stop"), set())
         self.assertNotIn("old", sessions)
         self.assertEqual(set(sessions), {"run", "ask", "fresh"})
-        self.assertEqual(sessions["fresh"]["status"], "idle")
+        self.assertEqual(sessions["fresh"].status, AgentStatus.DONE)
 
     def test_idle_child_drops_and_other_source_stays(self):
         sessions = {}
@@ -76,14 +78,14 @@ class ClaudeHookTests(unittest.TestCase):
         apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
         apply_hook(sessions, hook("s", "PermissionRequest"), set())
         apply_hook(sessions, hook("s", "Stop"), set())
-        self.assertEqual(sessions["s"], {"status": "idle", "blocking": False, "source": "cli"})
+        self.assertEqual(sessions["s"], AgentSession(status=AgentStatus.DONE))
         apply_hook(sessions, hook("s", "SessionEnd"), set())
         self.assertEqual(sessions, {})
 
     def test_notification_ask_and_agents_busy(self):
         sessions = {}
         apply_hook(sessions, hook("s", "Notification", notification_type="permission_prompt"), set())
-        self.assertTrue(sessions["s"]["blocking"])
+        self.assertEqual(sessions["s"].status, AgentStatus.WAITING)
         apply_agents(sessions, [{"sessionId": "bg", "state": "working"}])
         apply_agents(sessions, [{"id": "wait", "status": "waiting", "waitingFor": "permission prompt"}])
         by_id = {item["id"]: item for item in reports(sessions)}
@@ -94,15 +96,15 @@ class ClaudeHookTests(unittest.TestCase):
         sessions = {}
         apply_hook(sessions, hook("s", "PreToolUse"), set())
         apply_agents(sessions, [{"sessionId": "s", "pid": 9, "kind": "interactive"}])
-        self.assertEqual(sessions["s"]["status"], "busy")
-        self.assertEqual(sessions["s"]["pid"], 9)
+        self.assertEqual(sessions["s"].status, AgentStatus.WORKING)
+        self.assertEqual(sessions["s"].pid, 9)
         apply_agents(sessions, [{"sessionId": "live", "pid": 8}])
-        self.assertEqual(sessions["live"]["status"], "idle")
+        self.assertEqual(sessions["live"].status, AgentStatus.IDLE)
 
     def test_agents_running_state_is_busy(self):
         sessions = {}
         apply_agents(sessions, [{"sessionId": "s", "state": "running"}])
-        self.assertEqual(sessions["s"]["status"], "busy")
+        self.assertEqual(sessions["s"].status, AgentStatus.WORKING)
 
     def test_stop_with_background_work_keeps_session_running(self):
         for task_type in ("shell", "subagent", "MCP task"):
@@ -113,13 +115,13 @@ class ClaudeHookTests(unittest.TestCase):
                 apply_hook(sessions, hook("s", "Stop", background_tasks=[
                     {"id": "task-1", "type": task_type, "status": "running"},
                 ]), set())
-                self.assertEqual(sessions["s"]["status"], "busy")
-                self.assertFalse(sessions["s"]["blocking"])
+                self.assertEqual(sessions["s"].status, AgentStatus.WORKING)
+                self.assertNotEqual(sessions["s"].status, AgentStatus.WAITING)
                 apply_agents(sessions, [{"sessionId": "s", "pid": 9}])
                 apply_hook(sessions, hook("other", "SessionStart"), set())
-                self.assertEqual(sessions["s"]["status"], "busy")
+                self.assertEqual(sessions["s"].status, AgentStatus.WORKING)
                 apply_hook(sessions, hook("s", "Stop", background_tasks=[]), set())
-                self.assertEqual(sessions["s"]["status"], "idle")
+                self.assertEqual(sessions["s"].status, AgentStatus.DONE)
 
     def test_stop_without_running_tasks_is_idle(self):
         for tasks in (None, [], {}, "running", [None], [{"status": "completed"}],
@@ -129,7 +131,7 @@ class ClaudeHookTests(unittest.TestCase):
                 apply_hook(sessions, hook("s", "UserPromptSubmit"), set())
                 apply_hook(sessions, hook("s", "Stop", background_tasks=tasks,
                                           session_crons=[{"id": "cron-1"}]), set())
-                self.assertEqual(sessions["s"]["status"], "idle")
+                self.assertEqual(sessions["s"].status, AgentStatus.DONE)
 
 
 class ClaudeBridgeTests(unittest.TestCase):
@@ -147,7 +149,7 @@ class ClaudeBridgeTests(unittest.TestCase):
                 row["status"] = status
             store.merge_agents("claude", [row])
             self.assertEqual(store.snapshot("claude")[0:2], ("run", 1))
-            self.assertEqual(store.hooks["claude"]["s"]["source"], "desktop")
+            self.assertEqual(store.hooks["claude"]["s"].source, "desktop")
         # The final task was stopped in Claude's UI, without a Stop hook.
         store.merge_agents("claude", [{"sessionId": "s", "pid": 9, "status": "idle"}])
         self.assertEqual(store.snapshot("claude"),
@@ -184,7 +186,7 @@ class ClaudeBridgeTests(unittest.TestCase):
         ]))
         self.assertEqual(store.snapshot("claude"),
                          ("run", 1, {"ask": 0, "run": 1, "idle": 0}))
-        self.assertEqual(store.hooks["claude"]["s"]["source"], "desktop")
+        self.assertEqual(store.hooks["claude"]["s"].source, "desktop")
         store.update("claude", hook("s", "SessionEnd"))
         self.assertEqual(store.snapshot("claude"),
                          ("idle", 0, {"ask": 0, "run": 0, "idle": 0}))
@@ -197,7 +199,7 @@ class ClaudeBridgeTests(unittest.TestCase):
         kind, count, counts = store.snapshot("claude")
         self.assertEqual((kind, count), ("run", 1))
         self.assertEqual(counts, {"ask": 0, "run": 1, "idle": 1})
-        kind, count, counts = store.snapshot("claude", now=store.instances[("claude", "desktop")]["updated"] + 6)
+        kind, count, counts = store.snapshot("claude", now=time.time() + 60)
         self.assertEqual((kind, count), ("run", 1))
 
     def test_http_hook_post(self):

@@ -4,10 +4,12 @@ import os
 from pathlib import Path
 import sys
 
+from ulanzi_tc002.client.agent_status import (
+    AgentEvent, AgentEventKind, apply_event, reports, session_key,
+)
+
 ASK_EVENTS = {"PermissionRequest"}
-BUSY_EVENTS = {"UserPromptSubmit", "PreToolUse", "PostToolUse"}
 IDLE_EVENTS = {"Stop", "Interrupt"}
-SWITCH_EVENTS = {"SessionStart", "UserPromptSubmit"}
 HOOK_EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
@@ -19,7 +21,6 @@ HOOK_EVENTS = (
     "SubagentStop",
     "SessionEnd",
 )
-HOOK_SOURCES = ("desktop", "cli")
 SCRIPT_NAME = "tc002-watch.py"
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:8009"
 
@@ -101,89 +102,34 @@ def source_for(event, desktop_ids=None):
     return "cli"
 
 
-def session_key(event):
-    sid = event.get("session_id")
-    agent = event.get("agent_id")
-    if isinstance(agent, str) and agent:
-        if isinstance(sid, str) and sid:
-            return f"{sid}:{agent}"
-        return agent
-    return sid
-
-
-def prune(sessions, keep=None, source=None, pid=None):
-    for sid in list(sessions):
-        item = sessions[sid]
-        if sid == keep or item.get("status") == "busy" or item.get("blocking"):
-            continue
-        if source and item.get("source") != source:
-            continue
-        item_pid = item.get("pid")
-        if pid is not None or item_pid is not None:
-            if item_pid != pid:
-                continue
-        sessions.pop(sid, None)
-
-
 def apply_hook(sessions, event, desktop_ids=None):
     if not isinstance(event, dict):
         return
-    name = event.get("hook_event_name")
     sid = session_key(event)
+    name = event.get("hook_event_name")
     if not isinstance(sid, str) or not sid or not isinstance(name, str):
         return
-    if name == "SessionEnd":
-        sessions.pop(sid, None)
-        return
-    source = source_for(event, desktop_ids)
-    child = bool(event.get("agent_id")) or name in {"SubagentStop"}
-    if name == "SessionStart":
-        prune(sessions, keep=event.get("session_id") or sid, source=source)
-        return
+    kind = {
+        "SessionStart": AgentEventKind.SESSION_START,
+        "UserPromptSubmit": AgentEventKind.PROMPT_SUBMIT,
+        "PreToolUse": AgentEventKind.TOOL_START,
+        "PostToolUse": AgentEventKind.TOOL_COMPLETE,
+        "SessionEnd": AgentEventKind.SESSION_END,
+    }.get(name)
     if name in ASK_EVENTS:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["blocking"] = True
-        if child:
-            item["child"] = True
-        return
-    if name in BUSY_EVENTS:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["status"] = "busy"
-        item["blocking"] = False
-        if child:
-            item["child"] = True
-        elif name in SWITCH_EVENTS:
-            prune(sessions, keep=sid, source=source)
-        return
-    if name == "SubagentStop":
-        sessions.pop(sid, None)
-        return
-    if name in IDLE_EVENTS:
-        item = sessions.get(sid)
-        if item is None:
+        kind = AgentEventKind.PERMISSION_REQUEST
+    elif name in IDLE_EVENTS:
+        kind = AgentEventKind.STOP
+    elif name == "SubagentStop":
+        if not event.get("agent_id"):
             return
-        if item.get("child"):
-            sessions.pop(sid, None)
-            return
-        item["status"] = "idle"
-        item["blocking"] = False
-        prune(sessions, keep=sid, source=source)
-
-
-def reports(sessions):
-    grouped = {source: {"status": {}, "blocking": []} for source in HOOK_SOURCES}
-    for sid, item in sessions.items():
-        source = item.get("source") if item.get("source") in grouped else "cli"
-        grouped[source]["status"][sid] = item.get("status") or "idle"
-        if item.get("blocking"):
-            grouped[source]["blocking"].append(sid)
-    return [
-        {"id": source, "status": group["status"], "blocking": group["blocking"]}
-        for source, group in grouped.items()
-        if group["status"]
-    ]
+        kind = AgentEventKind.SESSION_END
+    if kind is None:
+        return
+    apply_event(sessions, AgentEvent(
+        sid, kind, source=source_for(event, desktop_ids), pid=event.get("pid"),
+        parent_id=(event.get("session_id") or "") if event.get("agent_id") else None,
+    ))
 
 
 def script_source(bridge_url=DEFAULT_BRIDGE_URL):

@@ -4,6 +4,7 @@ import signal
 import sys
 import threading
 
+from ulanzi_tc002.client.agent_status import summarize_counts
 from ulanzi_tc002.client.badge import badge_image
 from ulanzi_tc002.client.bridge import Bridge, BridgeStore
 from ulanzi_tc002.client.claude import install_hooks, list_agents, remove_hooks
@@ -12,7 +13,6 @@ from ulanzi_tc002.client.grok import install_hooks as install_grok_hooks, remove
 from ulanzi_tc002.client.opencode import install_plugin, remove_plugin
 from ulanzi_tc002.client.pi import install_extension, remove_extension
 
-KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok", "pi")
 AGENTS_APP = "agents"
 
 
@@ -48,11 +48,14 @@ def combined_status(states):
         counts["ask"] += item["ask"]
         counts["run"] += item["run"]
         counts["idle"] += item["idle"]
-    if counts["ask"]:
-        return "ask", counts["ask"], counts
-    if counts["run"]:
-        return "run", counts["run"], counts
-    return "idle", counts["idle"], counts
+    return summarize_counts(counts)
+
+
+def provider_displays(states):
+    displays = list(states)
+    if len(states) > 1:
+        displays.append((AGENTS_APP, *combined_status(states)))
+    return displays
 
 
 def send_badge(api, args, name, kind, count, counts):
@@ -63,107 +66,67 @@ def send_badge(api, args, name, kind, count, counts):
     print(f"{label} (ask={counts['ask']} run={counts['run']} idle={counts['idle']})", flush=True)
 
 
-class OpencodeProvider:
+class Provider:
+    poll = None
+
+    def __init__(self):
+        self.stop = threading.Event()
+        self.thread = None
+
+    def setup(self, bridge_url, store=None):
+        self.install(bridge_url)
+        if self.poll is not None and store is not None:
+            self.poll(store)
+            self.thread = threading.Thread(target=self._poll, args=(store,), daemon=True)
+            self.thread.start()
+
+    def _poll(self, store):
+        while not self.stop.wait(1):
+            self.poll(store)
+
+    def teardown(self):
+        self.stop.set()
+        if self.thread is not None:
+            self.thread.join(timeout=2)
+        self.cleanup()
+
+
+class OpencodeProvider(Provider):
     name = "opencode"
-
-    def setup(self, bridge_url, store=None):
-        install_plugin(bridge_url)
-
-    def teardown(self):
-        self.cleanup()
-
-    @staticmethod
-    def cleanup():
-        remove_plugin()
+    install = staticmethod(install_plugin)
+    cleanup = staticmethod(remove_plugin)
 
 
-class ClaudeProvider:
+class ClaudeProvider(Provider):
     name = "claude"
+    install = staticmethod(install_hooks)
+    cleanup = staticmethod(remove_hooks)
 
-    def setup(self, bridge_url, store=None):
-        self.store = store
-        self.stop = threading.Event()
-        install_hooks(bridge_url)
-        if store is not None:
-            rows = list_agents()
-            if rows is not None:
-                store.merge_agents(self.name, rows)
-        self.thread = threading.Thread(target=self._poll, daemon=True)
-        self.thread.start()
-
-    def _poll(self):
-        while not self.stop.wait(1):
-            rows = list_agents()
-            if rows is None or self.store is None:
-                continue
-            self.store.merge_agents(self.name, rows)
-
-    def teardown(self):
-        self.stop.set()
-        if hasattr(self, "thread"):
-            self.thread.join(timeout=2)
-        self.cleanup()
-
-    @staticmethod
-    def cleanup():
-        remove_hooks()
+    def poll(self, store):
+        rows = list_agents()
+        if rows is not None:
+            store.merge_agents(self.name, rows)
 
 
-class CodexProvider:
+class CodexProvider(Provider):
     name = "codex"
-
-    def setup(self, bridge_url, store=None):
-        install_codex_hooks(bridge_url)
-
-    def teardown(self):
-        self.cleanup()
-
-    @staticmethod
-    def cleanup():
-        remove_codex_hooks()
+    install = staticmethod(install_codex_hooks)
+    cleanup = staticmethod(remove_codex_hooks)
 
 
-class GrokProvider:
+class GrokProvider(Provider):
     name = "grok"
+    install = staticmethod(install_grok_hooks)
+    cleanup = staticmethod(remove_grok_hooks)
 
-    def setup(self, bridge_url, store=None):
-        self.store = store
-        self.stop = threading.Event()
-        install_grok_hooks(bridge_url)
-        if store is not None:
-            store.reap_live(self.name)
-        self.thread = threading.Thread(target=self._poll, daemon=True)
-        self.thread.start()
-
-    def _poll(self):
-        while not self.stop.wait(1):
-            if self.store is None:
-                continue
-            self.store.reap_live(self.name)
-
-    def teardown(self):
-        self.stop.set()
-        if hasattr(self, "thread"):
-            self.thread.join(timeout=2)
-        self.cleanup()
-
-    @staticmethod
-    def cleanup():
-        remove_grok_hooks()
+    def poll(self, store):
+        store.reap_live(self.name)
 
 
-class PiProvider:
+class PiProvider(Provider):
     name = "pi"
-
-    def setup(self, bridge_url, store=None):
-        install_extension(bridge_url)
-
-    def teardown(self):
-        self.cleanup()
-
-    @staticmethod
-    def cleanup():
-        remove_extension()
+    install = staticmethod(install_extension)
+    cleanup = staticmethod(remove_extension)
 
 
 PROVIDERS = {
@@ -173,6 +136,7 @@ PROVIDERS = {
     GrokProvider.name: GrokProvider,
     PiProvider.name: PiProvider,
 }
+KNOWN_PROVIDERS = tuple(PROVIDERS)
 
 
 def teardown_configs(names):
@@ -296,9 +260,7 @@ def watch_agents(args, api):
         last = None
         while True:
             states = [(name, *store.snapshot(name)) for name in providers.active]
-            displays = list(states)
-            if len(states) > 1:
-                displays.append((AGENTS_APP, *combined_status(states)))
+            displays = provider_displays(states)
             key = tuple((name, kind, count, counts["ask"], counts["run"], counts["idle"]) for name, kind, count, counts in displays)
             if key != last:
                 for name, kind, count, counts in displays:

@@ -56,7 +56,7 @@ r all
 ```
 
 `a PROVIDER` adds a provider; `r PROVIDER` removes it. Available providers are
-`opencode`, `claude`, `codex`, and `grok`. `r all` removes every active provider
+`opencode`, `claude`, `codex`, `grok`, and `pi`. `r all` removes every active provider
 and keeps the interface open for more commands. Status updates continue while
 waiting for input. Invalid commands print an error and leave the watcher running.
 
@@ -66,6 +66,36 @@ providers active, a combined `agents` app shows summed ask/run/idle counts. Ctrl
 exits and cleans up all active providers. `--once` polls the initial providers
 once without reading stdin. Use `--teardown` to remove leftover hooks/plugins
 after an unclean exit.
+
+Monitoring uses a shared agent state machine inspired by tty7. tc002 runs
+standalone; it does not need a tty7 installation or server. Provider hooks
+report working, waiting, and completed turns, which the clock displays as
+RUN, ASK, and IDLE. Late tool events cannot restart a completed turn.
+See [agent monitoring](docs/agent-monitoring.md) for transitions, transports,
+and links to each provider's session-count rules.
+
+## Watch tty7
+
+Use `tc002 watch tty7` to read statuses from an existing tty7 server:
+
+```powershell
+uv run tc002 watch tty7
+uv run tc002 watch tty7 --interval 2
+uv run tc002 watch tty7 --machine devbox
+uv run tc002 watch tty7 --once
+```
+
+This polls `tty7 agents --json`, groups reported panes by agent, and uses the
+same `opencode`, `claude`, `codex`, `grok`, and `pi` display apps. With multiple
+providers present, `agents` shows their combined counts. Apps appear and
+disappear as tty7 reports providers. `waiting` maps to ASK, `working` to RUN,
+and `idle`/`done` to IDLE.
+
+Install tty7 on PATH and enable its agent-status hooks in tty7 Settings >
+Agents. This command reads status without installing tc002 hooks or starting
+a bridge. Ctrl-C exits and removes its display apps; stdin is not used.
+The two modes share app names, so use one mode at a time for a given provider.
+See [tty7 monitoring](docs/tty7-status.md) for setup, diagnostics, and failures.
 
 ## HTTP API
 

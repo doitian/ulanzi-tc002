@@ -19,10 +19,10 @@ clock badge  ←  summarize()  ←  BridgeStore.snapshot()
 2. The Grok CLI runs the command hook; the script POSTs each event to
    `/providers/grok`. Native Grok HTTP hooks cannot target loopback
    (SSRF protection), so this uses a command hook like Codex.
-3. The bridge keeps hook-tracked sessions in one map, then posts one
-   instance record: `cli`.
-4. `snapshot("grok")` merges that record, then `summarize()` picks the
-   badge kind and the displayed count.
+3. The adapter normalizes Grok field names and translates hooks into shared
+   `AgentEvent` records. The bridge retains each `AgentSession` with source `cli`.
+4. `snapshot("grok")` reads those sessions and any plugin reports, then
+   the shared `summarize()` picks the badge kind and displayed count.
 
 Restart `tc002 watch agents` after changing hooks. If watch did not exit
 cleanly, run `tc002 watch agents --teardown` to remove leftover hooks.
@@ -36,10 +36,12 @@ becomes busy, or when a permission prompt asks for input.
 
 | Event | Effect |
 | --- | --- |
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | `status = busy`, clear blocking |
-| `Notification` of `permission_prompt` | blocking (ASK) |
-| `Stop`, `StopFailure`, `StopCancelled` | `status = idle`, then prune |
-| `Notification` of `idle_prompt` | `status = idle` if already tracked, then prune |
+| `UserPromptSubmit` | working (RUN), clear waiting |
+| `PreToolUse` | discover working activity if unseen; preserve waiting and done |
+| `PostToolUse` | resume waiting activity; never create a session or revive a done turn |
+| `Notification` of `permission_prompt` or `elicitation_dialog`, or a direct `PermissionRequest` | waiting (ASK) |
+| `Stop`, `StopFailure`, `StopCancelled` | done (IDLE), then prune |
+| `Notification` of `idle_prompt` | done (IDLE) if already tracked, then prune |
 | `SessionStart` | prune only; the new chat is not counted until ASK or RUN |
 | `SubagentStop` or any event with `subagentType` | ignored |
 | `SessionEnd` | drop |
@@ -72,43 +74,16 @@ sessions when:
 `/new`, `/resume`, or a new CLI session only switches focus. Permission
 prompts add the session even when that chat is not focused.
 
-## Bridge merge
+## Bridge merge and badge counts
 
-`BridgeStore` keys instances by `(provider, id)`. For Grok the id is `cli`,
-rebuilt on every hook. Direct POSTs of `{ id, status, blocking }` still
-work and go stale after 5 seconds.
+`BridgeStore` stores Grok hook sessions separately from plugin
+heartbeats. Hook state is read directly during `snapshot()` and does not
+expire after five seconds of silence. Lifecycle events, idle pruning, and
+provider discovery govern its lifetime. Direct POSTs of
+`{ id, status, blocking }` remain supported and expire after five seconds
+without a report.
 
-Hook-backed instances are refreshed on every `snapshot()`, so an idle Grok
-session does not vanish after 5 seconds of silence. `SessionEnd` (or an
-empty map after prune) removes the instance.
-
-`snapshot()`:
-
-1. Rebuilds `cli` from the hook map (timestamp = now).
-2. Drops any non-hook instance with no POST for 5 seconds.
-3. Prefixes each session id with `"cli:"`.
-4. Unions `blocking` the same way.
-5. Calls `summarize(status_by_id, blocking)`.
-
-## `summarize`
-
-Same function as OpenCode. A session in `blocking` is ASK, even if `status`
-still says `busy`. The same session is not also counted as RUN.
-
-```
-ask  = |blocking|
-run  = sessions whose status is busy/retry and that are not blocking
-idle = sessions whose status is idle and that are not blocking
-```
-
-Displayed kind is the first of ASK, RUN, IDLE that has a non-zero count, or
-IDLE when nothing is tracked:
-
-| Condition | Kind | Count on the badge |
-| --- | --- | --- |
-| `ask > 0` | `ask` | `ask` |
-| else `run > 0` | `run` | `run` |
-| else | `idle` | `idle` (0 if the map is empty) |
-
-The clock omits a displayed 0 and caps at `9+`. The CLI still prints the
-three raw totals: `grok RUN 1 (ask=0 run=1 idle=1)`.
+The [shared monitor](agent-monitoring.md#badge-counts) maps waiting to ASK,
+working to RUN, and idle/done to IDLE. ASK wins over RUN, which wins over IDLE;
+a waiting session is never counted again as running. Hook and plugin identities
+are kept separate, including reports whose instance id is `cli` or `desktop`.

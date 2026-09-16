@@ -4,10 +4,9 @@ import threading
 import time
 
 from ulanzi_tc002.client import claude, codex, grok
-from ulanzi_tc002.client.opencode import summarize
+from ulanzi_tc002.client.agent_status import summarize
 
 HOOKS = {"claude": claude, "codex": codex, "grok": grok}
-HOOK_IDS = ("desktop", "cli")
 
 STALE_SECONDS = 5
 DEFAULT_HOST = "127.0.0.1"
@@ -32,7 +31,6 @@ class BridgeStore:
             with self.lock:
                 bucket = self.hooks.setdefault(provider, {})
                 mod.apply_hook(bucket, payload, self.desktop_ids)
-                self._flush_hooks(provider, time.time())
             return
         instance = payload.get("id")
         if not isinstance(instance, str) or not instance:
@@ -56,10 +54,12 @@ class BridgeStore:
             }
 
     def merge_agents(self, provider, rows):
+        merge = getattr(HOOKS.get(provider), "apply_agents", None)
+        if merge is None:
+            raise ValueError(f"Provider does not support agent discovery: {provider}")
         with self.lock:
             bucket = self.hooks.setdefault(provider, {})
-            claude.apply_agents(bucket, rows)
-            self._flush_hooks(provider, time.time())
+            merge(bucket, rows)
 
     def reap_live(self, provider):
         mod = HOOKS.get(provider)
@@ -67,33 +67,17 @@ class BridgeStore:
         live_ids = getattr(mod, "live_ids", None)
         if not callable(reap) or not callable(live_ids):
             return
+        live = live_ids()
         with self.lock:
-            reap(self.hooks.get(provider, {}), live_ids())
-            self._flush_hooks(provider, time.time())
-
-    def _flush_hooks(self, provider, now):
-        mod = HOOKS.get(provider, claude)
-        live = set()
-        for report in mod.reports(self.hooks.get(provider, {})):
-            live.add(report["id"])
-            self.instances[(provider, report["id"])] = {
-                "status": report["status"],
-                "blocking": list(report["blocking"]),
-                "updated": now,
-            }
-        for key in [
-            key for key in self.instances
-            if key[0] == provider and key[1] in HOOK_IDS and key[1] not in live
-        ]:
-            del self.instances[key]
+            reap(self.hooks.get(provider, {}), live)
 
     def snapshot(self, provider, now=None):
         now = time.time() if now is None else now
         status_by_id = {}
         blocking = set()
         with self.lock:
-            if provider in self.hooks:
-                self._flush_hooks(provider, now)
+            for sid, item in self.hooks.get(provider, {}).items():
+                status_by_id[("hook", item.source, sid)] = item.status
             stale = [
                 key for key, item in self.instances.items()
                 if key[0] == provider and now - item["updated"] > self.stale
@@ -104,9 +88,9 @@ class BridgeStore:
                 if name != provider:
                     continue
                 for sid, kind in item["status"].items():
-                    status_by_id[f"{instance}:{sid}"] = kind
+                    status_by_id[("report", instance, sid)] = kind
                 for sid in item["blocking"]:
-                    blocking.add(f"{instance}:{sid}")
+                    blocking.add(("report", instance, sid))
         return summarize(status_by_id, blocking)
 
     def clear(self, provider):

@@ -4,11 +4,13 @@ import os
 from pathlib import Path
 import sys
 
+from ulanzi_tc002.client.agent_status import (
+    AgentEvent, AgentEventKind, apply_event, reports,
+)
+
 ASK_EVENTS = {"PermissionRequest"}
-BUSY_EVENTS = {"UserPromptSubmit", "PreToolUse", "PostToolUse"}
 IDLE_EVENTS = {"Stop", "StopFailure", "StopCancelled"}
-SWITCH_EVENTS = {"SessionStart", "UserPromptSubmit"}
-ASK_NOTIFICATIONS = {"permission_prompt"}
+ASK_NOTIFICATIONS = {"permission_prompt", "elicitation_dialog"}
 IDLE_NOTIFICATIONS = {"idle_prompt"}
 HOOK_EVENTS = (
     "SessionStart",
@@ -22,7 +24,6 @@ HOOK_EVENTS = (
     "SubagentStop",
     "SessionEnd",
 )
-HOOK_SOURCES = ("cli",)
 HOOK_FILE = "tc002-watch.json"
 SCRIPT_NAME = "tc002-watch.py"
 DEFAULT_BRIDGE_URL = "http://127.0.0.1:8009"
@@ -86,80 +87,27 @@ def reap(sessions, live=None):
             sessions.pop(sid, None)
 
 
-def prune(sessions, keep=None, source=None, pid=None):
-    for sid in list(sessions):
-        item = sessions[sid]
-        if sid == keep or item.get("status") == "busy" or item.get("blocking"):
-            continue
-        if source and item.get("source") != source:
-            continue
-        item_pid = item.get("pid")
-        if pid is not None or item_pid is not None:
-            if item_pid != pid:
-                continue
-        sessions.pop(sid, None)
-
-
 def apply_hook(sessions, event, desktop_ids=None):
-    if not isinstance(event, dict):
-        return
-    if field(event, "subagentType", "subagent_type"):
+    if not isinstance(event, dict) or field(event, "subagentType", "subagent_type"):
         return
     sid = field(event, "session_id", "sessionId")
     name = pascal(field(event, "hook_event_name", "hookEventName"))
     if not isinstance(sid, str) or not sid or not name:
         return
-    if name == "SessionEnd":
-        sessions.pop(sid, None)
-        return
-    source = "cli"
-    if name == "SessionStart":
-        prune(sessions, keep=sid, source=source)
-        return
+    kind = {
+        "SessionStart": AgentEventKind.SESSION_START,
+        "UserPromptSubmit": AgentEventKind.PROMPT_SUBMIT,
+        "PreToolUse": AgentEventKind.TOOL_START,
+        "PostToolUse": AgentEventKind.TOOL_COMPLETE,
+        "SessionEnd": AgentEventKind.SESSION_END,
+    }.get(name)
     notify = field(event, "notification_type", "notificationType")
-    asking = name in ASK_EVENTS or (name == "Notification" and notify in ASK_NOTIFICATIONS)
-    if asking:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["blocking"] = True
-        return
-    if name == "Notification" and notify in IDLE_NOTIFICATIONS:
-        item = sessions.get(sid)
-        if item is None:
-            return
-        item["status"] = "idle"
-        item["blocking"] = False
-        prune(sessions, keep=sid, source=source)
-        return
-    if name in BUSY_EVENTS:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["status"] = "busy"
-        item["blocking"] = False
-        if name in SWITCH_EVENTS:
-            prune(sessions, keep=sid, source=source)
-        return
-    if name in IDLE_EVENTS:
-        item = sessions.get(sid)
-        if item is None:
-            return
-        item["status"] = "idle"
-        item["blocking"] = False
-        prune(sessions, keep=sid, source=source)
-
-
-def reports(sessions):
-    grouped = {source: {"status": {}, "blocking": []} for source in HOOK_SOURCES}
-    for sid, item in sessions.items():
-        source = item.get("source") if item.get("source") in grouped else "cli"
-        grouped[source]["status"][sid] = item.get("status") or "idle"
-        if item.get("blocking"):
-            grouped[source]["blocking"].append(sid)
-    return [
-        {"id": source, "status": group["status"], "blocking": group["blocking"]}
-        for source, group in grouped.items()
-        if group["status"]
-    ]
+    if name in ASK_EVENTS or (name == "Notification" and notify in ASK_NOTIFICATIONS):
+        kind = AgentEventKind.PERMISSION_REQUEST
+    elif name in IDLE_EVENTS or (name == "Notification" and notify in IDLE_NOTIFICATIONS):
+        kind = AgentEventKind.STOP
+    if kind is not None:
+        apply_event(sessions, AgentEvent(sid, kind, pid=event.get("pid")))
 
 
 def script_source(bridge_url=DEFAULT_BRIDGE_URL):

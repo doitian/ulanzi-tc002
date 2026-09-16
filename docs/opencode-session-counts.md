@@ -66,7 +66,8 @@ pid. A later POST from the same pid replaces the previous payload.
 `snapshot()`:
 
 1. Drops any instance with no POST for 5 seconds (process quit).
-2. Prefixes each session id with `"{pid}:"` so two processes cannot collide.
+2. Keys each session by the report namespace, instance id, and session id as
+   a tuple, so separate processes and ids containing colons cannot collide.
 3. Unions `blocking` the same way.
 4. Calls `summarize(status_by_id, blocking)`.
 
@@ -74,6 +75,9 @@ Several OpenCode windows therefore add. Two pids each with one busy session
 are RUN 2.
 
 ## `summarize`
+
+Aggregation lives in the [shared monitor](agent-monitoring.md#badge-counts),
+which is also used by the hook-based providers and Pi.
 
 A session in `blocking` is ASK, even if `status` still says `busy`. The same
 session is not also counted as RUN.

@@ -3,6 +3,10 @@ import os
 from pathlib import Path
 import subprocess
 
+from ulanzi_tc002.client.agent_status import (
+    AgentEvent, AgentEventKind, AgentSession, AgentStatus, apply_event, reports, session_key,
+)
+
 HOOK_EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
@@ -16,9 +20,7 @@ HOOK_EVENTS = (
     "SessionEnd",
 )
 ASK_EVENTS = {"PermissionRequest", "Elicitation"}
-BUSY_EVENTS = {"UserPromptSubmit", "PreToolUse", "PostToolUse"}
 IDLE_EVENTS = {"Stop", "StopFailure"}
-SWITCH_EVENTS = {"SessionStart", "UserPromptSubmit"}
 ASK_NOTIFICATIONS = {
     "permission_prompt",
     "agent_needs_input",
@@ -26,7 +28,6 @@ ASK_NOTIFICATIONS = {
     "elicitation_url_dialog",
 }
 NOTIFICATION_MATCHER = "|".join(sorted(ASK_NOTIFICATIONS))
-HOOK_SOURCES = ("desktop", "cli")
 
 
 def config_dir(environ=None):
@@ -89,75 +90,37 @@ def source_for(event, desktop_ids=None):
     return "cli"
 
 
-def prune(sessions, keep=None, source=None, pid=None):
-    for sid in list(sessions):
-        item = sessions[sid]
-        if sid == keep or item.get("status") == "busy" or item.get("blocking"):
-            continue
-        if source and item.get("source") != source:
-            continue
-        item_pid = item.get("pid")
-        if pid is not None or item_pid is not None:
-            if item_pid != pid:
-                continue
-        sessions.pop(sid, None)
-
-
 def apply_hook(sessions, event, desktop_ids=None):
     if not isinstance(event, dict):
         return
-    sid = event.get("session_id")
+    sid = session_key(event)
     name = event.get("hook_event_name")
     if not isinstance(sid, str) or not sid or not isinstance(name, str):
         return
-    if name == "SessionEnd":
-        sessions.pop(sid, None)
+    kind = {
+        "SessionStart": AgentEventKind.SESSION_START,
+        "UserPromptSubmit": AgentEventKind.PROMPT_SUBMIT,
+        "PreToolUse": AgentEventKind.TOOL_START,
+        "PostToolUse": AgentEventKind.TOOL_COMPLETE,
+        "SessionEnd": AgentEventKind.SESSION_END,
+    }.get(name)
+    if name in ASK_EVENTS:
+        kind = AgentEventKind.QUESTION_ASKED if name == "Elicitation" else AgentEventKind.PERMISSION_REQUEST
+    elif name == "Notification" and event.get("notification_type") in ASK_NOTIFICATIONS:
+        kind = AgentEventKind.PERMISSION_REQUEST
+    elif name in IDLE_EVENTS:
+        kind = AgentEventKind.STOP
+    if kind is None:
         return
-    source = source_for(event, desktop_ids)
-    if name == "SessionStart":
-        prune(sessions, keep=sid, source=source)
-        return
-    notify = event.get("notification_type")
-    asking = name in ASK_EVENTS or (name == "Notification" and notify in ASK_NOTIFICATIONS)
-    if asking:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["blocking"] = True
-        if event.get("agent_id"):
-            item["child"] = True
-        return
-    if name in BUSY_EVENTS:
-        item = sessions.setdefault(sid, {"status": "idle", "blocking": False, "source": source})
-        item["source"] = source
-        item["status"] = "busy"
-        item["blocking"] = False
-        item.pop("background_only", None)
-        if event.get("agent_id"):
-            item["child"] = True
-        elif name in SWITCH_EVENTS:
-            prune(sessions, keep=sid, source=source)
-        return
-    if name in IDLE_EVENTS:
-        tasks = event.get("background_tasks")
-        background_running = isinstance(tasks, list) and any(
-            isinstance(task, dict) and agent_kind(task)[0] == "busy" for task in tasks
-        )
-        item = sessions.get(sid)
-        if item is None and background_running:
-            item = {"status": "busy", "blocking": False, "source": source}
-            sessions[sid] = item
-        if item is None:
-            return
-        if item.get("child") and not background_running:
-            sessions.pop(sid, None)
-            return
-        item["status"] = "busy" if background_running else "idle"
-        item["blocking"] = False
-        if background_running:
-            item["background_only"] = True
-        else:
-            item.pop("background_only", None)
-        prune(sessions, keep=sid, source=source)
+    tasks = event.get("background_tasks")
+    background_running = kind == AgentEventKind.STOP and isinstance(tasks, list) and any(
+        isinstance(task, dict) and agent_kind(task) == AgentStatus.WORKING for task in tasks
+    )
+    apply_event(sessions, AgentEvent(
+        sid, kind, source=source_for(event, desktop_ids), pid=event.get("pid"),
+        parent_id=(event.get("session_id") or "") if event.get("agent_id") else None,
+        background_running=background_running,
+    ))
 
 
 def apply_agents(sessions, rows):
@@ -170,25 +133,25 @@ def apply_agents(sessions, rows):
         if not isinstance(sid, str) or not sid:
             continue
         if row.get("state") in ("done", "failed", "stopped"):
+            apply_event(sessions, AgentEvent(sid, AgentEventKind.SESSION_END))
             continue
-        kind, blocking = agent_kind(row)
+        status = agent_kind(row)
         pid = row.get("pid")
         existing = sessions.get(sid)
-        if existing is not None and kind == "idle" and not blocking:
+        if existing is not None and status == AgentStatus.IDLE:
             if pid is not None:
-                existing["pid"] = pid
-            # An explicit idle presence clears background work after a manual
-            # stop, which need not fire another Stop hook. A row with no status
-            # is only a presence report and must not clear activity.
-            if (existing.get("background_only") and not existing.get("blocking")
+                existing.pid = pid
+            # Presence alone cannot end a turn; only an explicit idle report
+            # can settle background work that was stopped without another hook.
+            if (existing.background_only and existing.status != AgentStatus.WAITING
                     and (row.get("status") == "idle" or row.get("state") == "idle")):
-                existing["status"] = "idle"
-                existing.pop("background_only", None)
+                existing.status = AgentStatus.DONE
+                existing.background_only = False
             continue
-        item = existing if existing is not None else {"source": "cli"}
-        item.update(status=kind, blocking=blocking)
+        item = existing if existing is not None else AgentSession()
+        item.status = status
         if pid is not None:
-            item["pid"] = pid
+            item.pid = pid
         sessions[sid] = item
 
 
@@ -197,24 +160,10 @@ def agent_kind(row):
     status = row.get("status")
     state = row.get("state")
     if waiting or status == "waiting" or state == "blocked":
-        return "idle", True
+        return AgentStatus.WAITING
     if state in ("working", "running", "busy") or status in ("busy", "running", "working"):
-        return "busy", False
-    return "idle", False
-
-
-def reports(sessions):
-    grouped = {source: {"status": {}, "blocking": []} for source in HOOK_SOURCES}
-    for sid, item in sessions.items():
-        source = item.get("source") if item.get("source") in grouped else "cli"
-        grouped[source]["status"][sid] = item.get("status") or "idle"
-        if item.get("blocking"):
-            grouped[source]["blocking"].append(sid)
-    return [
-        {"id": source, "status": group["status"], "blocking": group["blocking"]}
-        for source, group in grouped.items()
-        if group["status"]
-    ]
+        return AgentStatus.WORKING
+    return AgentStatus.IDLE
 
 
 def list_agents():
