@@ -38,7 +38,10 @@ one mode at a time for a given provider on the same TC002 server.
 ## Status and counts
 
 Each poll invokes `tty7 agents --json`, with `--machine` when supplied.
-The adapter reads tty7's
+The first poll runs immediately. After processing each snapshot and sending
+changed badges to the TC002 server, the watcher waits `--interval` seconds
+(default 1) before running the command again. Each command has a five-second
+timeout. The adapter reads tty7's
 [pane-state JSON](https://github.com/l0ng-ai/tty7/blob/d07850a98e184d3b0c85cce4e728a21e8f1b7212/crates/tty7-core/src/daemon/control.rs#L327):
 
 ```json
@@ -69,8 +72,8 @@ Unmapped or unnamed agents are skipped with a diagnostic. They do not create
 new app names or contribute to the summary. Every snapshot replaces the
 previous one; a pane disappears from the count when tty7 stops reporting it.
 Provider apps are created when first reported and removed when their last
-pane disappears. The `agents` summary app exists only while at least two
-providers are present.
+pane disappears. The `agents` summary app remains present for the entire
+watch, including when only one provider or no providers are reported.
 
 | tty7 state | TC002 count |
 | --- | --- |
@@ -79,12 +82,14 @@ providers are present.
 | `idle`, `done` | IDLE |
 
 The [shared badge priority](agent-monitoring.md#badge-counts) is ASK > RUN >
-IDLE. Two working Codex panes produce `codex RUN 2`; one waiting Claude pane
-produces `claude ASK 1`. Together they also produce
+IDLE. Two working Codex panes produce `codex RUN 2` and `agents RUN 2`, even
+without another provider. Adding one waiting Claude pane produces
+`claude ASK 1` and changes the summary to
 `agents ASK 1 (ask=1 run=2 idle=0)`. Each provider uses its usual icon, and
 the summary uses the usual terminal icon.
 
-When no supported providers are reported, no display apps remain and the
+When no supported providers are reported, the provider apps are removed and
+the `agents` summary shows IDLE without a number (all counts are zero). The
 terminal prints `No supported agents reported by tty7`. Display updates are
 sent only when a provider's or summary's counts change.
 

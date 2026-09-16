@@ -73,8 +73,9 @@ status says busy. Multiple blocking requests for one session count once.
 The displayed status follows **ASK > RUN > IDLE**; the displayed number is
 the count for that status. An empty store shows IDLE without a number. The
 clock caps numbers at `9+`, while terminal output prints all three raw counts.
-With multiple providers active, the `agents` app sums those counts and applies
-the same priority.
+The `agents` app sums those counts and applies the same priority. Standalone
+`watch agents` shows this summary with multiple providers active;
+`watch tty7` always shows it, including with one or no providers.
 
 ## Provider lifecycle
 

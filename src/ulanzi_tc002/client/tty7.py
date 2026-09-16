@@ -96,7 +96,7 @@ def watch_tty7(args, api):
                 for message in diagnostics:
                     print(f"tty7: {message}", file=sys.stderr, flush=True)
                 last_diagnostics = diagnostics
-            displays = provider_displays(states)
+            displays = provider_displays(states, always_summary=True)
             names = {name for name, *_ in displays}
             for name in list(apps):
                 if name not in names:

@@ -5,6 +5,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from ulanzi_tc002.client.badge import badge_image
 from ulanzi_tc002.client.cli import main
 from ulanzi_tc002.client.tty7 import parse_status, read_status
 
@@ -109,7 +110,7 @@ class Tty7WatchTests(unittest.TestCase):
         self.errors = self.enterContext(patch("sys.stderr", new_callable=io.StringIO))
         self.request = self.enterContext(patch("ulanzi_tc002.client.cli.request", return_value={"accepted": True}))
 
-    def test_once_creates_provider_badge_and_cleans_up_without_installing_hooks(self):
+    def test_once_creates_provider_and_summary_badges_without_installing_hooks(self):
         result = subprocess.CompletedProcess([], 0, json.dumps({"agents": [pane(1, "waiting")]}), "")
         with patch("ulanzi_tc002.client.tty7.subprocess.run", return_value=result), \
                 patch("ulanzi_tc002.client.watch.Bridge") as bridge, \
@@ -118,12 +119,28 @@ class Tty7WatchTests(unittest.TestCase):
         bridge.assert_not_called()
         providers.assert_not_called()
         calls = self.request.call_args_list
-        self.assertEqual([call.kwargs["method"] for call in calls], ["POST", "POST", "DELETE"])
+        self.assertEqual([call.kwargs["method"] for call in calls], ["POST"] * 4 + ["DELETE"] * 2)
         self.assertEqual(calls[0].kwargs["json_body"], {"name": "codex", "type": "image"})
         self.assertTrue(calls[1].args[0].endswith("/api/apps/codex"))
-        self.assertTrue(calls[1].kwargs["json_body"]["image"].startswith("data:image/png;base64,"))
+        self.assertEqual(calls[1].kwargs["json_body"], {"image": badge_image("ask", 1, "codex")})
+        self.assertEqual(calls[2].kwargs["json_body"], {"name": "agents", "type": "image"})
+        self.assertTrue(calls[3].args[0].endswith("/api/apps/agents"))
+        self.assertEqual(calls[3].kwargs["json_body"], {"image": badge_image("ask", 1, "agents")})
+        self.assertTrue(calls[-2].args[0].endswith("/api/apps/agents"))
         self.assertTrue(calls[-1].args[0].endswith("/api/apps/codex"))
         self.assertIn("codex ASK 1 (ask=1 run=0 idle=0)", self.output.getvalue())
+        self.assertIn("agents ASK 1 (ask=1 run=0 idle=0)", self.output.getvalue())
+
+    def test_summary_counts_panes_across_providers(self):
+        snapshot = parse_status({"agents": [
+            pane(1, "working"), pane(2, "working"), pane(3, "working", "Claude"),
+        ]})
+        with patch("ulanzi_tc002.client.tty7.read_status", return_value=snapshot):
+            main(["watch", "tty7", "--once"])
+        updates = [call.kwargs["json_body"] for call in self.request.call_args_list
+                   if call.kwargs["method"] == "POST" and call.args[0].endswith("/api/apps/agents")]
+        self.assertEqual(updates, [{"image": badge_image("run", 3, "agents")}])
+        self.assertIn("agents RUN 3 (ask=0 run=3 idle=0)", self.output.getvalue())
 
     def test_polls_without_stdin_and_sends_only_changed_counts(self):
         busy = parse_status({"agents": [pane(1, "working")]})
@@ -139,12 +156,18 @@ class Tty7WatchTests(unittest.TestCase):
         self.assertTrue(all(call.args == (0.25,) for call in sleep.call_args_list))
         updates = [call for call in self.request.call_args_list
                    if call.kwargs["method"] == "POST" and "/api/apps/" in call.args[0]]
-        self.assertEqual(len(updates), 2)
+        self.assertEqual(
+            [(call.args[0].rsplit("/", 1)[-1], call.kwargs["json_body"]["image"]) for call in updates],
+            [(name, badge_image(kind, count, name)) for name, kind, count in (
+                ("codex", "run", 1), ("agents", "run", 1),
+                ("codex", "idle", 1), ("agents", "idle", 1), ("agents", "idle", 0),
+            )],
+        )
         self.assertEqual(self.request.call_args_list[-1].kwargs["method"], "DELETE")
         self.assertIn("codex IDLE 1", self.output.getvalue())
         self.assertIn("No supported agents reported by tty7", self.output.getvalue())
 
-    def test_provider_apps_and_summary_follow_discovery_and_disappearance(self):
+    def test_summary_persists_as_provider_apps_appear_and_disappear(self):
         codex = parse_status({"agents": [pane(1, "working")]})
         both = parse_status({"agents": [pane(1, "working"), pane(2, "waiting", "Claude")]})
         claude = parse_status({"agents": [pane(2, "done", "Claude")]})
@@ -157,14 +180,20 @@ class Tty7WatchTests(unittest.TestCase):
                    if call.args[0].endswith("/api/apps")]
         deleted = [call.args[0].rsplit("/", 1)[-1] for call in self.request.call_args_list
                    if call.kwargs["method"] == "DELETE"]
-        self.assertEqual(created, ["codex", "claude", "agents", "codex"])
-        self.assertEqual(deleted, ["codex", "agents", "claude", "codex"])
+        self.assertEqual(created, ["codex", "agents", "claude", "codex"])
+        self.assertEqual(deleted, ["codex", "claude", "codex", "agents"])
         self.assertIn("agents ASK 1 (ask=1 run=1 idle=0)", self.output.getvalue())
 
-    def test_empty_once_does_not_create_apps(self):
+    def test_empty_once_sends_zero_total_and_cleans_up(self):
         with patch("ulanzi_tc002.client.tty7.read_status", return_value=parse_status({"agents": []})):
             main(["watch", "tty7", "--once"])
-        self.request.assert_not_called()
+        calls = self.request.call_args_list
+        self.assertEqual([call.kwargs["method"] for call in calls], ["POST", "POST", "DELETE"])
+        self.assertEqual(calls[0].kwargs["json_body"], {"name": "agents", "type": "image"})
+        self.assertTrue(calls[1].args[0].endswith("/api/apps/agents"))
+        self.assertEqual(calls[1].kwargs["json_body"], {"image": badge_image("idle", 0, "agents")})
+        self.assertTrue(calls[2].args[0].endswith("/api/apps/agents"))
+        self.assertIn("agents IDLE (ask=0 run=0 idle=0)", self.output.getvalue())
         self.assertIn("No supported agents reported by tty7", self.output.getvalue())
 
     def test_diagnostics_are_printed_only_when_changed(self):

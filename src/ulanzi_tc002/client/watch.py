@@ -51,9 +51,9 @@ def combined_status(states):
     return summarize_counts(counts)
 
 
-def provider_displays(states):
+def provider_displays(states, *, always_summary=False):
     displays = list(states)
-    if len(states) > 1:
+    if always_summary or len(states) > 1:
         displays.append((AGENTS_APP, *combined_status(states)))
     return displays
 

@@ -86,10 +86,10 @@ uv run tc002 watch tty7 --once
 ```
 
 This polls `tty7 agents --json`, groups reported panes by agent, and uses the
-same `opencode`, `claude`, `codex`, `grok`, and `pi` display apps. With multiple
-providers present, `agents` shows their combined counts. Apps appear and
-disappear as tty7 reports providers. `waiting` maps to ASK, `working` to RUN,
-and `idle`/`done` to IDLE.
+same `opencode`, `claude`, `codex`, `grok`, and `pi` display apps. The `agents`
+app always shows their combined counts, including with one or no providers.
+Provider apps appear and disappear as tty7 reports them. `waiting` maps to
+ASK, `working` to RUN, and `idle`/`done` to IDLE.
 
 Install tty7 on PATH and enable its agent-status hooks in tty7 Settings >
 Agents. This command reads status without installing tc002 hooks or starting
