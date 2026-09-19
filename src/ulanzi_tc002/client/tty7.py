@@ -1,14 +1,8 @@
-from contextlib import ExitStack
 import json
 import subprocess
-import sys
-import time
 
 from ulanzi_tc002.client.agent_status import AgentStatus, summarize
-from ulanzi_tc002.client.watch import (
-    KNOWN_PROVIDERS, _bind_shutdown, _unbind_shutdown, delete_app, ensure_app,
-    provider_displays, send_badge,
-)
+from ulanzi_tc002.client.watch import KNOWN_PROVIDERS, watch_status
 
 COMMAND_TIMEOUT = 5
 
@@ -77,42 +71,5 @@ def read_status(machine=None):
     return parse_status(payload)
 
 
-def _delete_apps(api, args, apps):
-    with ExitStack() as removals:
-        for name in apps:
-            removals.callback(delete_app, api, args, name)
-
-
 def watch_tty7(args, api):
-    with ExitStack() as cleanup:
-        cleanup.callback(_unbind_shutdown, _bind_shutdown())
-        states, diagnostics = read_status(args.machine)
-        apps = {}
-        cleanup.callback(_delete_apps, api, args, apps)
-        last_diagnostics = None
-        was_empty = False
-        while True:
-            if diagnostics != last_diagnostics:
-                for message in diagnostics:
-                    print(f"tty7: {message}", file=sys.stderr, flush=True)
-                last_diagnostics = diagnostics
-            displays = provider_displays(states, always_summary=True)
-            names = {name for name, *_ in displays}
-            for name in list(apps):
-                if name not in names:
-                    delete_app(api, args, name)
-                    del apps[name]
-            for name, *status in displays:
-                if name not in apps:
-                    ensure_app(api, args, name)
-                    apps[name] = None
-                if status != apps[name]:
-                    send_badge(api, args, name, *status)
-                    apps[name] = status
-            if not states and not was_empty:
-                print("No supported agents reported by tty7", flush=True)
-            was_empty = not states
-            if args.once:
-                return
-            time.sleep(args.interval)
-            states, diagnostics = read_status(args.machine)
+    watch_status(args, api, "tty7", lambda: read_status(args.machine))

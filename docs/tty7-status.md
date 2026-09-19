@@ -32,7 +32,7 @@ this command does not establish a connection or start a tty7 server.
 The watcher does not read stdin or accept the standalone watcher's `a`/`r`
 commands. Ctrl-C or SIGTERM exits and removes its display apps. A polling
 or display-update error also runs cleanup. No provider hooks or plugins are
-installed or removed by this mode. Both watch modes share app names, so use
+installed or removed by this mode. All watch modes share app names, so use
 one mode at a time for a given provider on the same TC002 server.
 
 ## Status and counts

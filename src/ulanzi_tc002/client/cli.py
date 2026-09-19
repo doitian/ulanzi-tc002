@@ -81,6 +81,11 @@ def run_watch_tty7(args):
     watch_tty7(args, api)
 
 
+def run_watch_herdr(args):
+    from ulanzi_tc002.client.herdr import watch_herdr
+    watch_herdr(args, api)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", help="Server URL (default: config.toml or http://127.0.0.1:8008)")
@@ -140,6 +145,10 @@ def build_parser():
     tty7 = watch_sources.add_parser("tty7", parents=[polling], help="Watch agent status from tty7", epilog="Requires tty7 on PATH and a running tty7 server. Ctrl-C exits.")
     tty7.add_argument("--machine", help="Read a linked tty7 machine instead of the local server")
     tty7.set_defaults(handler=run_watch_tty7)
+    herdr = watch_sources.add_parser("herdr", parents=[polling], help="Watch agent status from Herdr", epilog="Requires herdr on PATH and a running Herdr server. Ctrl-C exits.")
+    herdr.add_argument("--machine", help="Read a saved Herdr SSH machine instead of the local server")
+    herdr.add_argument("--session", help="Read a named Herdr session")
+    herdr.set_defaults(handler=run_watch_herdr)
     return parser
 
 

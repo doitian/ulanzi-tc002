@@ -94,8 +94,39 @@ ASK, `working` to RUN, and `idle`/`done` to IDLE.
 Install tty7 on PATH and enable its agent-status hooks in tty7 Settings >
 Agents. This command reads status without installing tc002 hooks or starting
 a bridge. Ctrl-C exits and removes its display apps; stdin is not used.
-The two modes share app names, so use one mode at a time for a given provider.
+Watch modes share app names, so use one mode at a time for a given provider.
 See [tty7 monitoring](docs/tty7-status.md) for setup, diagnostics, and failures.
+
+## Watch Herdr
+
+Use `tc002 watch herdr` to read statuses from an existing Herdr server:
+
+```powershell
+uv run tc002 watch herdr
+uv run tc002 watch herdr --interval 2
+uv run tc002 watch herdr --machine devbox
+uv run tc002 watch herdr --session work
+uv run tc002 watch herdr --once
+```
+
+Install `herdr` on PATH and start its server. This polls `herdr agent list`,
+which returns JSON by default. `--machine` selects a saved Herdr SSH machine;
+`--session` selects a named session. Both options are forwarded to Herdr and
+can be combined. `--interval` defaults to one second and must be positive and
+finite. `--once` sends one snapshot, then exits and removes its display apps.
+
+Each reported pane counts once in its `opencode`, `claude`, `codex`, `grok`,
+or `pi` app. `blocked` maps to ASK, `working` to RUN, and `idle`/`done` to IDLE.
+Panes with `unknown` status or unsupported agent names are skipped with a
+diagnostic on stderr. Provider apps appear and disappear with their panes;
+the `agents` app always shows combined counts, including zero when no
+supported panes have a known status. Only changed counts send new badges.
+
+This mode reads status without installing hooks or starting a bridge. It does
+not read stdin. Ctrl-C or SIGTERM exits and removes its display apps. A failed
+command, five-second timeout, API error, or malformed response also stops the
+watcher and cleans up. Watch modes share app names, so use one mode at a time
+for a given provider on the same TC002 server.
 
 ## HTTP API
 

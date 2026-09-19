@@ -3,6 +3,7 @@ import queue
 import signal
 import sys
 import threading
+import time
 
 from ulanzi_tc002.client.agent_status import summarize_counts
 from ulanzi_tc002.client.badge import badge_image
@@ -64,6 +65,47 @@ def send_badge(api, args, name, kind, count, counts):
         raise ValueError(f"Server rejected update: {result}")
     label = f"{name} {kind.upper()}" if count == 0 else f"{name} {kind.upper()} {count}"
     print(f"{label} (ask={counts['ask']} run={counts['run']} idle={counts['idle']})", flush=True)
+
+
+def _delete_apps(api, args, apps):
+    with ExitStack() as removals:
+        for name in apps:
+            removals.callback(delete_app, api, args, name)
+
+
+def watch_status(args, api, source, read_status):
+    with ExitStack() as cleanup:
+        cleanup.callback(_unbind_shutdown, _bind_shutdown())
+        states, diagnostics = read_status()
+        apps = {}
+        cleanup.callback(_delete_apps, api, args, apps)
+        last_diagnostics = None
+        was_empty = False
+        while True:
+            if diagnostics != last_diagnostics:
+                for message in diagnostics:
+                    print(f"{source}: {message}", file=sys.stderr, flush=True)
+                last_diagnostics = diagnostics
+            displays = provider_displays(states, always_summary=True)
+            names = {name for name, *_ in displays}
+            for name in list(apps):
+                if name not in names:
+                    delete_app(api, args, name)
+                    del apps[name]
+            for name, *status in displays:
+                if name not in apps:
+                    ensure_app(api, args, name)
+                    apps[name] = None
+                if status != apps[name]:
+                    send_badge(api, args, name, *status)
+                    apps[name] = status
+            if not states and not was_empty:
+                print(f"No supported agents reported by {source}", flush=True)
+            was_empty = not states
+            if args.once:
+                return
+            time.sleep(args.interval)
+            states, diagnostics = read_status()
 
 
 class Provider:

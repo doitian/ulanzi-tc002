@@ -148,7 +148,7 @@ class Tty7WatchTests(unittest.TestCase):
         empty = parse_status({"agents": []})
         with patch("sys.stdin", io.StringIO()), \
                 patch("ulanzi_tc002.client.tty7.read_status", side_effect=[busy, busy, done, empty]) as read, \
-                patch("ulanzi_tc002.client.tty7.time.sleep", side_effect=[None, None, None, KeyboardInterrupt]) as sleep:
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=[None, None, None, KeyboardInterrupt]) as sleep:
             with self.assertRaises(KeyboardInterrupt):
                 main(["watch", "tty7", "--machine", "devbox", "--interval", "0.25"])
         self.assertEqual(read.call_count, 4)
@@ -173,7 +173,7 @@ class Tty7WatchTests(unittest.TestCase):
         claude = parse_status({"agents": [pane(2, "done", "Claude")]})
         empty = parse_status({"agents": []})
         with patch("ulanzi_tc002.client.tty7.read_status", side_effect=[codex, both, claude, empty, codex]), \
-                patch("ulanzi_tc002.client.tty7.time.sleep", side_effect=[None] * 4 + [KeyboardInterrupt]):
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=[None] * 4 + [KeyboardInterrupt]):
             with self.assertRaises(KeyboardInterrupt):
                 main(["watch", "tty7"])
         created = [call.kwargs["json_body"]["name"] for call in self.request.call_args_list
@@ -199,7 +199,7 @@ class Tty7WatchTests(unittest.TestCase):
     def test_diagnostics_are_printed_only_when_changed(self):
         snapshot = ([], ("codex: install hooks",))
         with patch("ulanzi_tc002.client.tty7.read_status", side_effect=[snapshot, snapshot]), \
-                patch("ulanzi_tc002.client.tty7.time.sleep", side_effect=[None, KeyboardInterrupt]):
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=[None, KeyboardInterrupt]):
             with self.assertRaises(KeyboardInterrupt):
                 main(["watch", "tty7"])
         self.assertEqual(self.errors.getvalue().count("codex: install hooks"), 1)
@@ -213,7 +213,7 @@ class Tty7WatchTests(unittest.TestCase):
     def test_connection_loss_cleans_up_instead_of_reporting_idle(self):
         busy = parse_status({"agents": [pane(1, "working")]})
         with patch("ulanzi_tc002.client.tty7.read_status", side_effect=[busy, ValueError("server unreachable")]), \
-                patch("ulanzi_tc002.client.tty7.time.sleep"):
+                patch("ulanzi_tc002.client.watch.time.sleep"):
             with self.assertRaisesRegex(ValueError, "server unreachable"):
                 main(["watch", "tty7"])
         self.assertEqual(self.request.call_args_list[-1].kwargs["method"], "DELETE")
@@ -231,7 +231,7 @@ class Tty7WatchTests(unittest.TestCase):
 
         with patch("ulanzi_tc002.client.watch.signal.signal", side_effect=bind), \
                 patch("ulanzi_tc002.client.tty7.read_status", return_value=parse_status({"agents": [pane(1, "working")]})), \
-                patch("ulanzi_tc002.client.tty7.time.sleep", side_effect=stop):
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=stop):
             with self.assertRaises(SystemExit) as error:
                 main(["watch", "tty7"])
         self.assertEqual(error.exception.code, 0)
