@@ -76,16 +76,6 @@ def run_watch(args):
     watch_agents(args, api)
 
 
-def run_watch_tty7(args):
-    from ulanzi_tc002.client.tty7 import watch_tty7
-    watch_tty7(args, api)
-
-
-def run_watch_herdr(args):
-    from ulanzi_tc002.client.herdr import watch_herdr
-    watch_herdr(args, api)
-
-
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", help="Server URL (default: config.toml or http://127.0.0.1:8008)")
@@ -136,19 +126,8 @@ def build_parser():
     polling = argparse.ArgumentParser(add_help=False)
     polling.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds (default: 1)")
     polling.add_argument("--once", action="store_true", help="Poll once and exit")
-    agents = watch_sources.add_parser("agents", parents=[polling], help="Watch provider sessions", epilog="Stdin commands: a PROVIDER, r PROVIDER, r all. Ctrl-C or EOF exits.")
-    agents.add_argument("--providers", help="Initial comma-separated providers (opencode,claude,codex,grok,pi); default: none")
-    agents.add_argument("--bridge-host", default="127.0.0.1", help="Bridge bind host (default: 127.0.0.1)")
-    agents.add_argument("--bridge-port", type=int, default=8009, help="Bridge bind port (default: 8009)")
-    agents.add_argument("--teardown", action="store_true", help="Remove leftover provider hooks and plugins, then exit")
+    agents = watch_sources.add_parser("agents", parents=[polling], help="Watch agent status from agent-berth", epilog="Requires agent-berth on PATH. Ctrl-C or SIGTERM exits.")
     agents.set_defaults(handler=run_watch)
-    tty7 = watch_sources.add_parser("tty7", parents=[polling], help="Watch agent status from tty7", epilog="Requires tty7 on PATH and a running tty7 server. Ctrl-C exits.")
-    tty7.add_argument("--machine", help="Read a linked tty7 machine instead of the local server")
-    tty7.set_defaults(handler=run_watch_tty7)
-    herdr = watch_sources.add_parser("herdr", parents=[polling], help="Watch agent status from Herdr", epilog="Requires herdr on PATH and a running Herdr server. Ctrl-C exits.")
-    herdr.add_argument("--machine", help="Read a saved Herdr SSH machine instead of the local server")
-    herdr.add_argument("--session", help="Read a named Herdr session")
-    herdr.set_defaults(handler=run_watch_herdr)
     return parser
 
 
@@ -157,16 +136,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == "watch":
         try:
-            if args.watch_command == "agents":
-                from ulanzi_tc002.client.watch import KNOWN_PROVIDERS, parse_providers, teardown_configs
-                if args.teardown:
-                    value = args.providers if args.providers else ",".join(KNOWN_PROVIDERS)
-                    args.providers = parse_providers(value)
-                    teardown_configs(args.providers)
-                    return
-                if not 0 <= args.bridge_port <= 65535:
-                    raise ValueError("bridge port must be 0..65535")
-                args.providers = parse_providers(args.providers) if args.providers is not None else []
             if not math.isfinite(args.interval) or args.interval <= 0:
                 raise ValueError("interval must be positive and finite")
         except ValueError as error:

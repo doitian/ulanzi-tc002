@@ -44,89 +44,30 @@ a blank line clears the display.
 
 ## Watch agents
 
-Run `tc002 watch agents` for a simple terminal interface. It starts with no
-providers; use `--providers opencode,claude` to select providers at startup.
-Enter one command per line on stdin:
-
-```text
-a codex
-a claude
-r codex
-r all
-```
-
-`a PROVIDER` adds a provider; `r PROVIDER` removes it. Available providers are
-`opencode`, `claude`, `codex`, `grok`, and `pi`. `r all` removes every active provider
-and keeps the interface open for more commands. Status updates continue while
-waiting for input. Invalid commands print an error and leave the watcher running.
-
-Adding a provider installs its hooks or plugin and creates its display app.
-Removing it cleans up both and discards its session state. With two or more
-providers active, a combined `agents` app shows summed ask/run/idle counts. Ctrl-C or stdin EOF
-exits and cleans up all active providers. `--once` polls the initial providers
-once without reading stdin. Use `--teardown` to remove leftover hooks/plugins
-after an unclean exit.
-
-Monitoring uses a shared agent state machine inspired by tty7. tc002 runs
-standalone; it does not need a tty7 installation or server. Provider hooks
-report working, waiting, and completed turns, which the clock displays as
-RUN, ASK, and IDLE. Late tool events cannot restart a completed turn.
-See [agent monitoring](docs/agent-monitoring.md) for transitions, transports,
-and links to each provider's session-count rules.
-
-## Watch tty7
-
-Use `tc002 watch tty7` to read statuses from an existing tty7 server:
+Run `tc002 watch agents` to mirror agent-berth sessions on the clock:
 
 ```powershell
-uv run tc002 watch tty7
-uv run tc002 watch tty7 --interval 2
-uv run tc002 watch tty7 --machine devbox
-uv run tc002 watch tty7 --once
+uv run tc002 watch agents
+uv run tc002 watch agents --interval 2
+uv run tc002 watch agents --once
 ```
 
-This polls `tty7 agents --json`, groups reported panes by agent, and uses the
-same `opencode`, `claude`, `codex`, `grok`, and `pi` display apps. The `agents`
-app always shows their combined counts, including with one or no providers.
-Provider apps appear and disappear as tty7 reports them. `waiting` maps to
-ASK, `working` to RUN, and `idle`/`done` to IDLE.
+Install agent-berth, put it on PATH, and run `agent-berth setup` so its hooks
+report agent sessions. This command polls `agent-berth list --json` every
+second (or `--interval`, which must be positive and finite). `--once` sends one
+snapshot, then exits and removes its display apps.
 
-Install tty7 on PATH and enable its agent-status hooks in tty7 Settings >
-Agents. This command reads status without installing tc002 hooks or starting
-a bridge. Ctrl-C exits and removes its display apps; stdin is not used.
-Watch modes share app names, so use one mode at a time for a given provider.
-See [tty7 monitoring](docs/tty7-status.md) for setup, diagnostics, and failures.
+Each session counts once in its `opencode`, `claude`, `codex`, `grok`, or `pi`
+display app. `waiting` maps to ASK, `working` to RUN, and `idle`/`done` to
+IDLE. The `agents` app always shows the combined counts, including zero when
+nothing is reported. Provider apps appear and disappear as agent-berth reports
+their sessions. Sessions with an unsupported provider or status are skipped
+with a diagnostic on stderr. Only changed counts send new badges.
 
-## Watch Herdr
-
-Use `tc002 watch herdr` to read statuses from an existing Herdr server:
-
-```powershell
-uv run tc002 watch herdr
-uv run tc002 watch herdr --interval 2
-uv run tc002 watch herdr --machine devbox
-uv run tc002 watch herdr --session work
-uv run tc002 watch herdr --once
-```
-
-Install `herdr` on PATH and start its server. This polls `herdr agent list`,
-which returns JSON by default. `--machine` selects a saved Herdr SSH machine;
-`--session` selects a named session. Both options are forwarded to Herdr and
-can be combined. `--interval` defaults to one second and must be positive and
-finite. `--once` sends one snapshot, then exits and removes its display apps.
-
-Each reported pane counts once in its `opencode`, `claude`, `codex`, `grok`,
-or `pi` app. `blocked` maps to ASK, `working` to RUN, and `idle`/`done` to IDLE.
-Panes with `unknown` status or unsupported agent names are skipped with a
-diagnostic on stderr. Provider apps appear and disappear with their panes;
-the `agents` app always shows combined counts, including zero when no
-supported panes have a known status. Only changed counts send new badges.
-
-This mode reads status without installing hooks or starting a bridge. It does
-not read stdin. Ctrl-C or SIGTERM exits and removes its display apps. A failed
-command, five-second timeout, API error, or malformed response also stops the
-watcher and cleans up. Watch modes share app names, so use one mode at a time
-for a given provider on the same TC002 server.
+Watch mode does not install hooks or start a bridge. Ctrl-C or SIGTERM exits
+and removes its display apps. A missing `agent-berth`, a five-second timeout, a
+failed command, an API error, or a malformed response also stops the watcher
+and cleans up. See [agent monitoring](docs/agent-monitoring.md).
 
 ## HTTP API
 
