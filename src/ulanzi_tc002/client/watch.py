@@ -87,6 +87,12 @@ def watch_status(args, api, source, read_status):
 
 
 def watch_agents(args, api):
+    if args.teardown:
+        from ulanzi_tc002.client.agent_berth import KNOWN_PROVIDERS
+        for name in (*KNOWN_PROVIDERS, AGENTS_APP):
+            delete_app(api, args, name)
+            print(f"Deleted {name}", flush=True)
+        return
     from ulanzi_tc002.client.agent_berth import read_list
     watch_status(args, api, "agent-berth", read_list)
 

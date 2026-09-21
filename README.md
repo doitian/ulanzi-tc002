@@ -50,12 +50,14 @@ Run `tc002 watch agents` to mirror agent-berth sessions on the clock:
 uv run tc002 watch agents
 uv run tc002 watch agents --interval 2
 uv run tc002 watch agents --once
+uv run tc002 watch agents --teardown
 ```
 
 Install agent-berth, put it on PATH, and run `agent-berth setup` so its hooks
 report agent sessions. This command polls `agent-berth list --json` every
 second (or `--interval`, which must be positive and finite). `--once` sends one
-snapshot, then exits and removes its display apps.
+snapshot, then exits and removes its display apps. `--teardown` only deletes
+the display apps the watcher can create, without polling.
 
 Each session counts once in its `opencode`, `claude`, `codex`, `grok`, or `pi`
 display app. `waiting` maps to ASK, `working` to RUN, and `idle`/`done` to

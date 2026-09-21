@@ -127,6 +127,7 @@ def build_parser():
     polling.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds (default: 1)")
     polling.add_argument("--once", action="store_true", help="Poll once and exit")
     agents = watch_sources.add_parser("agents", parents=[polling], help="Watch agent status from agent-berth", epilog="Requires agent-berth on PATH. Ctrl-C or SIGTERM exits.")
+    agents.add_argument("--teardown", action="store_true", help="Delete all watch-managed apps and exit")
     agents.set_defaults(handler=run_watch)
     return parser
 

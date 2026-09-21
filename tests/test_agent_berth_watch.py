@@ -228,6 +228,16 @@ class AgentBerthWatchTests(unittest.TestCase):
         self.assertEqual(handlers[signal.SIGINT], signal.SIG_DFL)
         self.assertEqual([call.kwargs["method"] for call in self.request.call_args_list[-2:]], ["DELETE", "DELETE"])
 
+    def test_teardown_deletes_watch_apps_without_polling(self):
+        with patch("ulanzi_tc002.client.agent_berth.read_list") as read:
+            main(["watch", "agents", "--teardown"])
+        read.assert_not_called()
+        calls = self.request.call_args_list
+        self.assertTrue(all(call.kwargs["method"] == "DELETE" for call in calls))
+        self.assertEqual([call.args[0].rsplit("/", 1)[-1] for call in calls],
+                         ["opencode", "claude", "codex", "grok", "pi", "agents"])
+        self.assertIn("Deleted agents", self.output.getvalue())
+
     def test_rejects_invalid_intervals_before_polling(self):
         for interval in ("0", "-1", "nan", "inf"):
             with self.subTest(interval=interval):
