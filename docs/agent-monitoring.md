@@ -21,9 +21,9 @@ only writer; tc002 is a read-only display client.
 | agent-berth status | Meaning | Clock badge |
 | --- | --- | --- |
 | `idle` | Discovered presence without a running turn | IDLE |
-| `working` | Running a turn or known background work | RUN |
+| `running` | Running a turn or known background work | RUN |
 | `waiting` | Permission, question, or elicitation needs input | ASK |
-| `done` | The tracked turn finished | IDLE |
+| `done` | The tracked turn finished | DONE |
 
 Providers are `opencode`, `claude`, `codex`, `grok`, and `pi`. Sessions for any
 other provider are skipped with a diagnostic. An unrecognized status is a
@@ -31,13 +31,14 @@ malformed response and stops the watcher.
 
 ## Badge counts
 
-Waiting sessions count as ASK. Working sessions count as RUN. Idle and done
-sessions count as IDLE. Each display shows the status with the highest
-priority (**ASK > RUN > IDLE**) and the number of sessions in that status.
+Waiting sessions count as ASK. Running sessions count as RUN. Done sessions
+count as DONE. Idle sessions count as IDLE. Each display shows the status with
+the highest priority (**ASK > RUN > DONE > IDLE**) and the number of sessions in
+that status.
 
 The `agents` app sums the provider counts and applies the same priority; it
 shows IDLE without a number when nothing is reported. The clock caps numbers at
-`9+`, while terminal output prints all three raw counts.
+`9+`, while terminal output prints all four raw counts.
 
 ## Failures
 

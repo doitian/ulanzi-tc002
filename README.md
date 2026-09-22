@@ -60,8 +60,8 @@ snapshot, then exits and removes its display apps. `--teardown` only deletes
 the display apps the watcher can create, without polling.
 
 Each session counts once in its `opencode`, `claude`, `codex`, `grok`, or `pi`
-display app. `waiting` maps to ASK, `working` to RUN, and `idle`/`done` to
-IDLE. The `agents` app always shows the combined counts, including zero when
+display app. `waiting` maps to ASK, `running` to RUN, `done` to DONE, and
+`idle` to IDLE. The `agents` app always shows the combined counts, including zero when
 nothing is reported. Provider apps appear and disappear as agent-berth reports
 their sessions. Sessions with an unsupported provider or status are skipped
 with a diagnostic on stderr. Only changed counts send new badges.

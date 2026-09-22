@@ -13,27 +13,32 @@ class SummarizeTests(unittest.TestCase):
             {"a", "d"},
         )
         self.assertEqual((kind, count), ("ask", 2))
-        self.assertEqual(counts, {"ask": 2, "run": 1, "idle": 1})
+        self.assertEqual(counts, {"ask": 2, "run": 1, "done": 0, "idle": 1})
 
     def test_run_includes_retry_when_nothing_blocks(self):
         kind, count, counts = summarize({"a": "busy", "b": "retry", "c": "idle"}, set())
         self.assertEqual((kind, count), ("run", 2))
-        self.assertEqual(counts, {"ask": 0, "run": 2, "idle": 1})
+        self.assertEqual(counts, {"ask": 0, "run": 2, "done": 0, "idle": 1})
+
+    def test_done_beats_idle(self):
+        kind, count, counts = summarize({"a": "done", "b": "done", "c": "idle"}, set())
+        self.assertEqual((kind, count), ("done", 2))
+        self.assertEqual(counts, {"ask": 0, "run": 0, "done": 2, "idle": 1})
 
     def test_idle_after_run_when_nothing_else_is_active(self):
         kind, count, counts = summarize({"a": "idle", "b": "idle"}, set())
         self.assertEqual((kind, count), ("idle", 2))
-        self.assertEqual(counts, {"ask": 0, "run": 0, "idle": 2})
+        self.assertEqual(counts, {"ask": 0, "run": 0, "done": 0, "idle": 2})
 
     def test_idle_zero_when_empty(self):
         kind, count, counts = summarize({}, set())
         self.assertEqual((kind, count), ("idle", 0))
-        self.assertEqual(counts, {"ask": 0, "run": 0, "idle": 0})
+        self.assertEqual(counts, {"ask": 0, "run": 0, "done": 0, "idle": 0})
 
     def test_same_session_permission_and_question_count_once(self):
         kind, count, counts = summarize({"a": "busy"}, {"a"})
         self.assertEqual((kind, count), ("ask", 1))
-        self.assertEqual(counts, {"ask": 1, "run": 0, "idle": 0})
+        self.assertEqual(counts, {"ask": 1, "run": 0, "done": 0, "idle": 0})
 
 
 class BadgeTests(unittest.TestCase):

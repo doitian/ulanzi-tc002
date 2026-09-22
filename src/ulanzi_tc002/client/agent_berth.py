@@ -7,7 +7,7 @@ COMMAND_TIMEOUT = 5
 KNOWN_PROVIDERS = ("opencode", "claude", "codex", "grok", "pi")
 KNOWN_STATUSES = {
     AgentStatus.IDLE,
-    AgentStatus.WORKING,
+    AgentStatus.RUNNING,
     AgentStatus.WAITING,
     AgentStatus.DONE,
 }

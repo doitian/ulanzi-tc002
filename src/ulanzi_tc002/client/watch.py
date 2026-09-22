@@ -22,10 +22,11 @@ def delete_app(api, args, name):
 
 
 def combined_status(states):
-    counts = {"ask": 0, "run": 0, "idle": 0}
+    counts = {"ask": 0, "run": 0, "done": 0, "idle": 0}
     for _name, _kind, _count, item in states:
         counts["ask"] += item["ask"]
         counts["run"] += item["run"]
+        counts["done"] += item["done"]
         counts["idle"] += item["idle"]
     return summarize_counts(counts)
 
@@ -42,7 +43,7 @@ def send_badge(api, args, name, kind, count, counts):
     if not isinstance(result, dict) or result.get("accepted") is not True:
         raise ValueError(f"Server rejected update: {result}")
     label = f"{name} {kind.upper()}" if count == 0 else f"{name} {kind.upper()} {count}"
-    print(f"{label} (ask={counts['ask']} run={counts['run']} idle={counts['idle']})", flush=True)
+    print(f"{label} (ask={counts['ask']} run={counts['run']} done={counts['done']} idle={counts['idle']})", flush=True)
 
 
 def _delete_apps(api, args, apps):
