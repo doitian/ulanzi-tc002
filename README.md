@@ -54,16 +54,16 @@ uv run tc002 watch agents --teardown
 ```
 
 Install agent-berth, put it on PATH, and run `agent-berth setup` so its hooks
-report agent sessions. This command polls `agent-berth list --json` every
+report agent sessions. This command polls `agent-berth stats --json` every
 second (or `--interval`, which must be positive and finite). `--once` sends one
 snapshot, then exits and removes its display apps. `--teardown` only deletes
 the display apps the watcher can create, without polling.
 
-Each session counts once in its `opencode`, `claude`, `codex`, `grok`, or `pi`
-display app. `waiting` maps to ASK, `running` to RUN, `done` to DONE, and
-`idle` to IDLE. The `agents` app always shows the combined counts, including zero when
+Each provider's display app shows its highest-priority status (`waiting` >
+`running` > `done` > `idle`) and the number of sessions in that status. The
+`agents` app always shows the combined counts, including zero when
 nothing is reported. Provider apps appear and disappear as agent-berth reports
-their sessions. Sessions with an unsupported provider or status are skipped
+their sessions. Providers without a matching tc002 app are skipped
 with a diagnostic on stderr. Only changed counts send new badges.
 
 Watch mode does not install hooks or start a bridge. Ctrl-C or SIGTERM exits

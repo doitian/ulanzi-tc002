@@ -14,8 +14,8 @@ GROK_OUTER = (220, 220, 220)
 AGENTS_OUTER = (148, 163, 184)
 PI_OUTER = (250, 250, 250)
 STATUS_COLOR = {
-    "ask": (242, 166, 90),
-    "run": (232, 207, 120),
+    "waiting": (242, 166, 90),
+    "running": (232, 207, 120),
     "done": (125, 170, 220),
     "idle": (133, 201, 149),
 }
@@ -128,7 +128,7 @@ _PI = (
     ".###.......####.",
     "................",
 )
-_ASK = (
+_WAITING = (
     "................",
     "......####......",
     ".....######.....",
@@ -146,7 +146,7 @@ _ASK = (
     "................",
     "................",
 )
-_RUN = (
+_RUNNING = (
     "................",
     ".....##.........",
     ".....####.......",
@@ -231,8 +231,8 @@ AGENTS = _sprite(_AGENTS, {"#": AGENTS_OUTER, "+": AGENTS_OUTER, ".": BLACK})
 PI = _sprite(_PI, {"#": PI_OUTER, "+": PI_OUTER, ".": BLACK})
 LOGOS = {"opencode": OPENCODE, "claude": CLAUDE, "codex": CODEX, "grok": GROK, "agents": AGENTS, "pi": PI}
 STATUSES = {
-    "ask": _paint(_ASK, STATUS_COLOR["ask"]),
-    "run": _paint(_RUN, STATUS_COLOR["run"]),
+    "waiting": _paint(_WAITING, STATUS_COLOR["waiting"]),
+    "running": _paint(_RUNNING, STATUS_COLOR["running"]),
     "done": _paint(_DONE, STATUS_COLOR["done"]),
     "idle": _paint(_IDLE, STATUS_COLOR["idle"]),
 }

@@ -23,12 +23,10 @@ def delete_app(api, args, name):
 
 
 def combined_status(states):
-    counts = {"ask": 0, "run": 0, "done": 0, "idle": 0}
+    counts = {"waiting": 0, "running": 0, "done": 0, "idle": 0}
     for _name, _kind, _count, item in states:
-        counts["ask"] += item["ask"]
-        counts["run"] += item["run"]
-        counts["done"] += item["done"]
-        counts["idle"] += item["idle"]
+        for key in counts:
+            counts[key] += item[key]
     return summarize_counts(counts)
 
 
@@ -44,7 +42,8 @@ def send_badge(api, args, name, kind, count, counts):
     if not isinstance(result, dict) or result.get("accepted") is not True:
         raise ValueError(f"Server rejected update: {result}")
     label = f"{name} {kind.upper()}" if count == 0 else f"{name} {kind.upper()} {count}"
-    print(f"{label} (ask={counts['ask']} run={counts['run']} done={counts['done']} idle={counts['idle']})", flush=True)
+    detail = " ".join(f"{key}={value}" for key, value in counts.items())
+    print(f"{label} ({detail})", flush=True)
 
 
 def _delete_apps(api, args, apps):
@@ -109,8 +108,8 @@ def watch_agents(args, api):
             delete_app(api, args, name)
             print(f"Deleted {name}", flush=True)
         return
-    from ulanzi_tc002.client.agent_berth import read_list
-    watch_status(args, api, "agent-berth", read_list)
+    from ulanzi_tc002.client.agent_berth import read_stats
+    watch_status(args, api, "agent-berth", read_stats)
 
 
 def _raise_shutdown(signum, frame):
