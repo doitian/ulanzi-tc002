@@ -67,9 +67,11 @@ their sessions. Sessions with an unsupported provider or status are skipped
 with a diagnostic on stderr. Only changed counts send new badges.
 
 Watch mode does not install hooks or start a bridge. Ctrl-C or SIGTERM exits
-and removes its display apps. A missing `agent-berth`, a five-second timeout, a
-failed command, an API error, or a malformed response also stops the watcher
-and cleans up. See [agent monitoring](docs/agent-monitoring.md).
+and removes its display apps. If calling `agent-berth` fails (missing
+executable, five-second timeout, failed command, or malformed response), the
+watcher prints the error and retries with exponential backoff capped at five
+minutes, keeping its last badges; `--once` still exits on the first failure.
+An API error stops the watcher and cleans up. See [agent monitoring](docs/agent-monitoring.md).
 
 ## HTTP API
 

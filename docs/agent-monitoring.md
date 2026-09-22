@@ -27,7 +27,7 @@ only writer; tc002 is a read-only display client.
 
 Providers are `opencode`, `claude`, `codex`, `grok`, and `pi`. Sessions for any
 other provider are skipped with a diagnostic. An unrecognized status is a
-malformed response and stops the watcher.
+malformed response and is retried like any other agent-berth failure.
 
 ## Badge counts
 
@@ -42,6 +42,10 @@ shows IDLE without a number when nothing is reported. The clock caps numbers at
 
 ## Failures
 
-A missing `agent-berth` executable, a five-second timeout, a nonzero exit, an
-invalid JSON payload, or an API error stops the watcher and removes its display
-apps. Ctrl-C and SIGTERM do the same.
+A missing `agent-berth` executable, a five-second timeout, a nonzero exit, or
+an invalid JSON payload prints an error on stderr and is retried with
+exponential backoff: the wait doubles from `--interval` up to a maximum of
+five minutes and resets after a successful read. Display apps and their last
+badges are kept during the outage. `--once` has nothing to retry, so it exits
+with the error instead. An API error, Ctrl-C, or SIGTERM stops the watcher and
+removes its display apps.

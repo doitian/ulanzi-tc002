@@ -197,14 +197,46 @@ class AgentBerthWatchTests(unittest.TestCase):
                 main(["watch", "agents", "--once"])
         self.request.assert_not_called()
 
-    def test_connection_loss_cleans_up_without_reporting_idle(self):
+    def test_read_failure_retries_with_backoff_and_recovers(self):
         busy = parse_list([session("s1", "running")])
-        with patch("ulanzi_tc002.client.agent_berth.read_list", side_effect=[busy, ValueError("server unreachable")]), \
-                patch("ulanzi_tc002.client.watch.time.sleep"):
-            with self.assertRaisesRegex(ValueError, "server unreachable"):
-                main(["watch", "agents"])
-        self.assertEqual([call.kwargs["method"] for call in self.request.call_args_list[-2:]], ["DELETE", "DELETE"])
+        sleeps = []
+
+        def record(delay):
+            sleeps.append(delay)
+            if len(sleeps) == 4:
+                raise KeyboardInterrupt
+
+        with patch("ulanzi_tc002.client.agent_berth.read_list",
+                   side_effect=[busy, ValueError("server unreachable"), ValueError("still down"), busy]) as read, \
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=record):
+            with self.assertRaises(KeyboardInterrupt):
+                main(["watch", "agents", "--interval", "1"])
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(sleeps, [1, 1, 2, 1])
+        errors = self.errors.getvalue()
+        self.assertIn("agent-berth: server unreachable; retrying in 1 seconds", errors)
+        self.assertIn("agent-berth: still down; retrying in 2 seconds", errors)
         self.assertNotIn("IDLE", self.output.getvalue())
+        deleted = [call.args[0].rsplit("/", 1)[-1] for call in self.request.call_args_list
+                   if call.kwargs["method"] == "DELETE"]
+        self.assertEqual(deleted, ["agents", "codex"])
+
+    def test_retry_backoff_is_capped_at_five_minutes(self):
+        sleeps = []
+
+        def record(delay):
+            sleeps.append(delay)
+            if len(sleeps) == 3:
+                raise KeyboardInterrupt
+
+        with patch("ulanzi_tc002.client.agent_berth.read_list",
+                   side_effect=[ValueError("down")] * 3 + [parse_list([])]), \
+                patch("ulanzi_tc002.client.watch.time.sleep", side_effect=record):
+            with self.assertRaises(KeyboardInterrupt):
+                main(["watch", "agents", "--interval", "100"])
+        self.assertEqual(sleeps, [100, 200, 300])
+        self.assertIn("agent-berth: down; retrying in 300 seconds", self.errors.getvalue())
+        self.request.assert_not_called()
 
     def test_rejected_badge_cleans_up_created_app(self):
         self.request.return_value = {"accepted": False}
