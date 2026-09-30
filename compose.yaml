@@ -8,6 +8,7 @@ services:
       TC002_DEVICE_IP: "10.31.3.197"
     volumes:
       - tc002-data:/data
+    restart: unless-stopped
 
 volumes:
   tc002-data:
