@@ -15,6 +15,22 @@ PUBLIC_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/app.js", "/style.css", 
 PUBLIC_PATHS = {"/", "/api/health"}
 
 
+class MCPAtExactPath:
+    """Serve the mounted MCP app at /mcp without the trailing-slash redirect.
+
+    Starlette only matches a Mount with the slash (307 /mcp -> /mcp/), and the
+    redirect Location downgrades to http behind a TLS-terminating proxy, which
+    breaks strict MCP clients.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        scope = dict(scope, path="/", raw_path=b"/", root_path=scope.get("root_path", "") + "/mcp")
+        await self.app(scope, receive, send)
+
+
 def device_app_names(data):
     if isinstance(data, dict):
         apps = data.get("apps", [])
@@ -36,6 +52,7 @@ def device_app_names(data):
 def create_app(settings=None, device=None):
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import FileResponse, JSONResponse
+    from starlette.routing import Route
 
     settings = settings or Settings.from_env()
     if device is None:
@@ -62,6 +79,8 @@ def create_app(settings=None, device=None):
     app.state.registry = registry
     app.state.mcp = mcp
     app.mount("/mcp", mcp_asgi)
+    mcp_route = Route("/mcp", endpoint=MCPAtExactPath(mcp_asgi), methods=["GET", "POST", "DELETE"])
+    app.router.routes.insert(0, mcp_route)
 
     @app.middleware("http")
     async def bearer_auth(request: Request, call_next):
@@ -72,7 +91,11 @@ def create_app(settings=None, device=None):
         header = request.headers.get("authorization", "")
         if header == f"Bearer {token}":
             return await call_next(request)
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return JSONResponse(
+            {"error": "Unauthorized"},
+            status_code=401,
+            headers={"WWW-Authenticate": 'Bearer realm="mcp"'},
+        )
 
     def require_app(name):
         try:
@@ -197,4 +220,10 @@ def cli():
         parser.error("--tick must be positive and finite")
     print(f"TC002 server at http://{settings.host}:{settings.port}/ ; "
           f"MCP at /mcp. Ctrl+C stops.", flush=True)
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port, lifespan="on")
+    uvicorn.run(
+        create_app(settings),
+        host=settings.host,
+        port=settings.port,
+        lifespan="on",
+        proxy_headers=True,
+    )
